@@ -101,7 +101,7 @@ aliPhoto.onload = function() {
   // Re-render any cached canvases
   _faceCanvases.forEach(function(item) { _renderAliFace(item.canvas, item.size); });
 };
-aliPhoto.src = '/ali.jpg';
+aliPhoto.src = '../ali.jpg';
 
 function _renderAliFace(oc, size) {
   const g = oc.getContext('2d');

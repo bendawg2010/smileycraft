@@ -32,7 +32,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI BLAST</h1>
 <div class="sub">Shoot the Ali asteroids. Don't crash. They split when hit.</div>
 <div class="hud">
@@ -59,7 +59,7 @@
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   var ship = { x: W/2, y: H/2, vx: 0, vy: 0, angle: -Math.PI/2, r: 14, invuln: 0 };
   var bullets = [];

@@ -30,7 +30,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI CATCH</h1>
 <div class="sub">Catch Alis falling from the sky. Dodge the bombs.</div>
 <div class="hud">
@@ -48,7 +48,7 @@
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   var basket = { x: W/2 - 55, y: H - 60, w: 110, h: 40, speed: 600 };
   var items = [];

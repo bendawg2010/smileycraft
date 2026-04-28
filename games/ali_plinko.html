@@ -32,7 +32,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI PLINKO</h1>
 <div class="sub">Drop Alis through pegs. Bigger center risk = bigger reward.</div>
 <div class="hud">
@@ -64,7 +64,7 @@
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   // Multipliers per bin (15 bins) — low/med/high risk profiles.
   // Tuned so the natural binomial drop distribution gives ~96/94/93% RTP.

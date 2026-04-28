@@ -159,7 +159,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI STRIKE</h1>
 <div class="sub">CT vs T &bull; First to 13 &bull; Plant or defuse the bomb.</div>
 <div class="stage">
@@ -464,7 +464,7 @@
     aliTexture = new THREE.Texture(aliImgLoad); aliTexture.needsUpdate = true;
     enemies.forEach(function(e){ if (e.mat) e.mat.map = aliTexture; });
   };
-  aliImgLoad.src = '/ali.jpg';
+  aliImgLoad.src = '../ali.jpg';
 
   function spawnT(cx, cy, weapon, isCarrier) {
     var body = new THREE.Group();

@@ -19,7 +19,7 @@
   .hud span b { color:var(--cyan); }
   .lives-row { display:inline-flex; gap:4px; align-items:center; }
   .life-dot { width:14px; height:14px; border-radius:50%;
-              background:url('/ali.jpg') center/cover no-repeat;
+              background:url('../ali.jpg') center/cover no-repeat;
               border:1.5px solid #FF006E; box-shadow:0 0 6px rgba(255,0,110,0.6); }
   canvas { background:linear-gradient(180deg,#141428 0%,#0D0D1A 100%);
            border:2px solid var(--cyan); border-radius:10px;
@@ -39,7 +39,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI BOUNCE</h1>
 <div class="sub">Clear all the bricks. Catch the drops for powerups.</div>
 <div class="hud">
@@ -68,7 +68,7 @@
   var W = canvas.width, H = canvas.height;
 
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   var ROW_COLORS = [ '#E53935', '#FB8C00', '#FDD835', '#43A047', '#1E88E5', '#3949AB', '#8E24AA' ];
 

@@ -28,7 +28,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI DINO</h1>
 <div class="sub">Jump cacti, duck under birds. The Chrome offline classic, Ali edition.</div>
 <div class="hud">
@@ -45,7 +45,7 @@
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   var hi = parseInt(localStorage.getItem('aliDinoHi')||'0', 10);
   document.getElementById('hi').textContent = hi;

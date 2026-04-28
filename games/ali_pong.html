@@ -32,7 +32,7 @@
 </style>
 </head>
 <body>
-<a href="/" class="back">← BACK</a>
+<a href="../" class="back">← BACK</a>
 <h1>ALI PONG</h1>
 <div class="sub">First to 7. You vs the CPU.</div>
 <div class="hud">
@@ -56,7 +56,7 @@
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
   var aliImg = new Image();
-  aliImg.src = '/ali.jpg';
+  aliImg.src = '../ali.jpg';
 
   var paddleH = 90, paddleW = 12;
   var you = { x: 20, y: H/2 - paddleH/2, w: paddleW, h: paddleH, vy: 0, speed: 520 };
