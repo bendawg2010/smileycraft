@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Catch</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 0%, rgba(0,255,255,0.1), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  canvas { background:linear-gradient(180deg,#1a1a3a 0%,#0D0D1A 100%);
+           border:2px solid var(--cyan); border-radius:10px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); max-width:100%; touch-action:none; cursor:none; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .btn:hover { transform:translateY(-2px); }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI CATCH</h1>
+<div class="sub">Catch Alis falling from the sky. Dodge the bombs.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>LIVES: <b id="lives">3</b></span>
+  <span>COMBO: <b id="combo">x1</b></span>
+</div>
+<canvas id="c" width="720" height="520"></canvas>
+<button class="btn" id="start">PLAY</button>
+<div class="tip">Mouse / ← → / A D / drag on mobile &bull; Gold Alis = 5 pts &bull; Bombs = -1 life</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var basket = { x: W/2 - 55, y: H - 60, w: 110, h: 40, speed: 600 };
+  var items = [];
+  var particles = [];
+  var score = 0, lives = 3, combo = 1, comboTimer = 0;
+  var spawnTimer = 0, elapsed = 0;
+  var running = false, gameOver = false;
+
+  var keyLeft = false, keyRight = false, mouseX = null;
+
+  canvas.addEventListener('mousemove', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) * (W/rect.width);
+  });
+  canvas.addEventListener('mouseleave', function(){ mouseX = null; });
+  canvas.addEventListener('touchmove', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseX = (e.touches[0].clientX - rect.left) * (W/rect.width);
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchstart', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseX = (e.touches[0].clientX - rect.left) * (W/rect.width);
+    e.preventDefault();
+  }, {passive:false});
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { keyLeft = true; mouseX = null; e.preventDefault(); }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { keyRight = true; mouseX = null; e.preventDefault(); }
+  });
+  document.addEventListener('keyup', function(e){
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keyLeft = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keyRight = false;
+  });
+
+  function spawnItem() {
+    var roll = Math.random();
+    var type = 'normal', size = 32, vy = 140 + Math.min(elapsed * 8, 280);
+    var color = '#00FFFF';
+    if (roll < 0.12) { type = 'bomb'; color = '#FF4444'; size = 34; }
+    else if (roll < 0.22) { type = 'gold'; color = '#FFD700'; size = 36; }
+    else if (roll < 0.35) { type = 'fast'; color = '#FF006E'; size = 28; vy *= 1.6; }
+    items.push({
+      x: 20 + Math.random() * (W - 40 - size),
+      y: -size,
+      w: size, h: size,
+      vy: vy,
+      type: type, color: color,
+      rot: 0, vr: (Math.random() - 0.5) * 3
+    });
+  }
+
+  function spawnParticles(x, y, color, n) {
+    for (var i = 0; i < n; i++) {
+      particles.push({
+        x: x, y: y,
+        vx: (Math.random() - 0.5) * 240,
+        vy: (Math.random() - 1) * 240,
+        life: 0.55, maxLife: 0.55, color: color
+      });
+    }
+  }
+
+  function updateHUD() {
+    document.getElementById('score').textContent = score;
+    document.getElementById('lives').textContent = lives;
+    document.getElementById('combo').textContent = 'x' + combo;
+  }
+
+  function update(dt) {
+    elapsed += dt;
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnItem();
+      spawnTimer = Math.max(0.25, 0.8 - elapsed * 0.012);
+    }
+
+    // Basket control
+    var minX = 8, maxX = W - 8 - basket.w;
+    if (mouseX !== null) {
+      var wantX = mouseX - basket.w / 2;
+      basket.x += (wantX - basket.x) * Math.min(1, dt * 20);
+    } else {
+      var dir = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
+      basket.x += dir * basket.speed * dt;
+    }
+    if (basket.x < minX) basket.x = minX;
+    if (basket.x > maxX) basket.x = maxX;
+
+    // Items
+    for (var i = items.length - 1; i >= 0; i--) {
+      var it = items[i];
+      it.y += it.vy * dt;
+      it.rot += it.vr * dt;
+      // Caught?
+      var cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+      if (cy >= basket.y && cy <= basket.y + basket.h
+          && cx >= basket.x && cx <= basket.x + basket.w) {
+        items.splice(i, 1);
+        if (it.type === 'bomb') {
+          lives--;
+          combo = 1;
+          comboTimer = 0;
+          spawnParticles(cx, cy, '#FF4444', 14);
+          updateHUD();
+          if (lives <= 0) endGame();
+        } else {
+          combo = Math.min(10, combo + 1);
+          comboTimer = 2.0;
+          var pts = it.type === 'gold' ? 5 : (it.type === 'fast' ? 3 : 1);
+          score += pts * combo;
+          spawnParticles(cx, cy, it.color, 10);
+          updateHUD();
+        }
+        continue;
+      }
+      // Off-screen
+      if (it.y > H + it.h) {
+        items.splice(i, 1);
+        if (it.type !== 'bomb') {
+          combo = 1;
+          comboTimer = 0;
+          updateHUD();
+        }
+      }
+    }
+
+    // Combo decay
+    if (combo > 1) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) { combo = 1; updateHUD(); }
+    }
+
+    // Particles
+    for (var j = particles.length - 1; j >= 0; j--) {
+      var p = particles[j];
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vy += 400 * dt;
+      p.life -= dt;
+      if (p.life <= 0) particles.splice(j, 1);
+    }
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+    document.getElementById('start').textContent = 'TRY AGAIN';
+  }
+
+  function drawAli(x, y, w, h, rot, type) {
+    ctx.save();
+    ctx.translate(x + w/2, y + h/2);
+    ctx.rotate(rot);
+    if (type === 'bomb') {
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(0, 0, w/2, 0, Math.PI*2);
+      ctx.fill();
+      // Fuse
+      ctx.strokeStyle = '#FFB347';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -w/2);
+      ctx.quadraticCurveTo(w/4, -w/2 - 6, w/3, -w/2 - 10);
+      ctx.stroke();
+      ctx.fillStyle = '#FF4444';
+      ctx.beginPath();
+      ctx.arc(w/3, -w/2 - 10, 3, 0, Math.PI*2);
+      ctx.fill();
+      // Skull-ish X face
+      ctx.fillStyle = '#FF4444';
+      ctx.font = "bold " + (w*0.5) + "px sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✕', 0, 1);
+    } else {
+      // Glow ring color by type
+      ctx.shadowColor = type === 'gold' ? '#FFD700' : (type === 'fast' ? '#FF006E' : '#00FFFF');
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(0, 0, w/2, 0, Math.PI*2);
+      ctx.fillStyle = ctx.shadowColor;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      if (aliImg.complete && aliImg.naturalWidth) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, w/2 - 2, 0, Math.PI*2);
+        ctx.clip();
+        ctx.drawImage(aliImg, -w/2, -h/2, w, h);
+        ctx.restore();
+      }
+      // Ring
+      ctx.beginPath();
+      ctx.arc(0, 0, w/2, 0, Math.PI*2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBasket() {
+    ctx.save();
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 14;
+    // Rim
+    var grad = ctx.createLinearGradient(basket.x, 0, basket.x + basket.w, 0);
+    grad.addColorStop(0, '#00FFFF');
+    grad.addColorStop(0.5, '#FFFFFF');
+    grad.addColorStop(1, '#00FFFF');
+    ctx.fillStyle = grad;
+    ctx.fillRect(basket.x, basket.y, basket.w, 6);
+    // Body
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = 'rgba(0,255,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(basket.x, basket.y + 6);
+    ctx.lineTo(basket.x + basket.w, basket.y + 6);
+    ctx.lineTo(basket.x + basket.w - 12, basket.y + basket.h);
+    ctx.lineTo(basket.x + 12, basket.y + basket.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+    // Ali face on basket
+    if (aliImg.complete && aliImg.naturalWidth) {
+      var fs = 24;
+      var fx = basket.x + basket.w/2 - fs/2;
+      var fy = basket.y + 10;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(fx + fs/2, fy + fs/2, fs/2, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, fx, fy, fs, fs);
+      ctx.restore();
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    for (var s = 0; s < 40; s++) {
+      var sx = (s * 47 + (elapsed * 5 % W)) % W;
+      var sy = (s * 83) % H;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+
+    // Items
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      drawAli(it.x, it.y, it.w, it.h, it.rot, it.type);
+    }
+
+    // Particles
+    for (var j = 0; j < particles.length; j++) {
+      var p = particles[j];
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+    }
+    ctx.globalAlpha = 1;
+
+    drawBasket();
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 36px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 10);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.font = "bold 20px 'Russo One', sans-serif";
+      ctx.fillText('Score: ' + score, W/2, H/2 + 20);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    score = 0; lives = 3; combo = 1; comboTimer = 0;
+    elapsed = 0; spawnTimer = 0;
+    items = []; particles = [];
+    gameOver = false; running = true;
+    basket.x = W/2 - basket.w/2;
+    updateHUD();
+  }
+
+  document.getElementById('start').addEventListener('click', startGame);
+  updateHUD();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ALI RUN - Endless Runner</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #0D0D1A;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Chakra Petch', sans-serif;
+  color: #e0e0e0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+a.back-link {
+  position: fixed;
+  top: 16px;
+  left: 18px;
+  color: #00e5ff;
+  text-decoration: none;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 0.95rem;
+  z-index: 100;
+  transition: color 0.2s;
+}
+a.back-link:hover { color: #ff2d55; }
+#gameWrapper {
+  position: relative;
+  width: 800px;
+  max-width: 100vw;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 2px solid #1a1a3e;
+  border-radius: 8px;
+  box-shadow: 0 0 40px rgba(0,229,255,0.12), 0 0 80px rgba(255,45,85,0.06);
+  image-rendering: pixelated;
+}
+#touchControls {
+  display: none;
+  width: 100%;
+  max-width: 800px;
+  margin-top: 10px;
+  gap: 10px;
+}
+#touchControls button {
+  flex: 1;
+  padding: 18px 0;
+  font-family: 'Russo One', sans-serif;
+  font-size: 1.1rem;
+  border: 2px solid #00e5ff;
+  background: rgba(0,229,255,0.08);
+  color: #00e5ff;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#touchControls button:active {
+  background: rgba(0,229,255,0.25);
+}
+#touchControls button.duck-btn {
+  border-color: #ff2d55;
+  color: #ff2d55;
+  background: rgba(255,45,85,0.08);
+}
+#touchControls button.duck-btn:active {
+  background: rgba(255,45,85,0.25);
+}
+@media (hover: none) and (pointer: coarse) {
+  #touchControls { display: flex; }
+}
+@media (max-width: 820px) {
+  #gameWrapper { width: 100vw; }
+  a.back-link { font-size: 0.8rem; top: 8px; left: 10px; }
+}
+</style>
+</head>
+<body>
+<a class="back-link" href="../index.html">&larr; Back to AliCraft</a>
+<div id="gameWrapper">
+  <canvas id="game" width="800" height="300"></canvas>
+  <div id="touchControls">
+    <button id="btnJump" ontouchstart="handleJump(event)" onclick="handleJump(event)">JUMP</button>
+    <button id="btnDuck" class="duck-btn"
+      ontouchstart="handleDuckStart(event)" ontouchend="handleDuckEnd(event)"
+      onmousedown="handleDuckStart(event)" onmouseup="handleDuckEnd(event)">DUCK</button>
+  </div>
+</div>
+
+<script>
+// ==================== ALI RUN ====================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 300;
+
+// ---- Ali face image loading ----
+let aliFaceImg = null;
+let aliFaceImg2 = null;
+(function loadAliFaces(){
+  // Try to grab from parent page's imgs array
+  try {
+    if (window.parent && window.parent.imgs && window.parent.imgs.length >= 2) {
+      aliFaceImg = new Image();
+      aliFaceImg.src = window.parent.imgs[0];
+      aliFaceImg2 = new Image();
+      aliFaceImg2.src = window.parent.imgs[1];
+      return;
+    }
+  } catch(e){}
+  // Try opener
+  try {
+    if (window.opener && window.opener.imgs && window.opener.imgs.length >= 2) {
+      aliFaceImg = new Image();
+      aliFaceImg.src = window.opener.imgs[0];
+      aliFaceImg2 = new Image();
+      aliFaceImg2.src = window.opener.imgs[1];
+      return;
+    }
+  } catch(e){}
+  // Fallback: load from parent directory's script tag via fetch
+  fetch('../index.html').then(r=>r.text()).then(html=>{
+    const m = html.match(/const imgs\s*=\s*\[([\s\S]*?)\];/);
+    if(m){
+      const entries = m[1].match(/'data:image[^']+'/g);
+      if(entries && entries.length>=1){
+        aliFaceImg = new Image();
+        aliFaceImg.src = entries[0].slice(1,-1);
+        if(entries.length>=2){
+          aliFaceImg2 = new Image();
+          aliFaceImg2.src = entries[1].slice(1,-1);
+        }
+      }
+    }
+  }).catch(()=>{});
+})();
+
+// ---- State ----
+const STATE = { MENU: 0, PLAYING: 1, DEAD: 2 };
+let state = STATE.MENU;
+let score = 0;
+let highScore = parseInt(localStorage.getItem('aliRunHigh')) || 0;
+let coins = 0;
+let combo = 0;
+let comboTimer = 0;
+let stamina = 100;
+let maxStamina = 100;
+let gameSpeed = 3.5;
+let baseSpeed = 3.5;
+let speedBoostTimer = 0;
+let invincibleTimer = 0;
+let frameCount = 0;
+let lastMilestone = 0;
+let milestoneMsg = '';
+let milestoneMsgTimer = 0;
+let shakeX = 0, shakeY = 0;
+let stumbleTimer = 0;
+let stumbleCooldown = 0;
+let deathMessage = '';
+let particles = [];
+let trailParticles = [];
+
+// ---- Ali ----
+const ali = {
+  x: 80, y: 0, w: 36, h: 48,
+  vy: 0, grounded: true, ducking: false,
+  jumpCount: 0, maxJumps: 2,
+  animFrame: 0, animTimer: 0,
+  runFrame: 0
+};
+const GROUND_Y = H - 50;
+const GRAVITY = 0.55;
+const JUMP_FORCE = -9.2;
+const JUMP_FORCE_2 = -6.5; // weak double jump
+
+// ---- Obstacles ----
+let obstacles = [];
+let collectibles = [];
+let powerups = [];
+let bgOffset = 0;
+let bgOffset2 = 0;
+let bgOffset3 = 0;
+let groundOffset = 0;
+
+const OBSTACLE_TYPES = [
+  { name:'hurdle', w:20, h:30, color:'#ff4444' },
+  { name:'basketball', w:28, h:28, color:'#ff8800', round:true },
+  { name:'dumbbell', w:40, h:18, color:'#aaaaaa' },
+  { name:'dodgeball', w:24, h:24, color:'#ff2d55', round:true },
+  { name:'trampoline', w:44, h:14, color:'#00e5ff' },
+  { name:'bench', w:50, h:22, color:'#8B4513' },
+  { name:'cone', w:18, h:32, color:'#ff6600' }
+];
+
+const EXCUSE_TEXTS = [
+  "Doctor's Note", "Stomach Ache", "Forgot Gym Clothes",
+  "Bad Knee", "Allergic to Running", "Left Sneakers at Home",
+  "Twisted Ankle", "Eye Appointment", "My Dog Ate My Shorts"
+];
+
+const POWERUP_TYPES = [
+  { name:'energy_drink', emoji:'⚡', color:'#00ff88', effect:'speed' },
+  { name:'couch', emoji:'🛋️', color:'#ff00ff', effect:'invincible' },
+  { name:'pizza', emoji:'🍕', color:'#ffaa00', effect:'stamina' },
+  { name:'snack', emoji:'🍫', color:'#8B4513', effect:'stamina_small' }
+];
+
+const DEATH_MESSAGES = [
+  "Ali collapsed like a folding chair",
+  "Ali's legs filed a restraining order",
+  "Ali got defeated by basic exercise",
+  "Ali.exe has stopped responding",
+  "Ali's fitness level: potato",
+  "Ali thought the obstacle was optional",
+  "Ali's body said 'nah fam'",
+  "Ali ran out of excuses AND stamina",
+  "Ali needs a nap after that",
+  "Ali's gym teacher is disappointed but not surprised",
+  "Ali tripped over his own shadow",
+  "Ali's cardio peaked at walking to the fridge"
+];
+
+const MILESTONE_MESSAGES = [
+  "Ali's actually moving! Shocking!",
+  "500 feet?! Is Ali... exercising?",
+  "Ali's gym teacher fainted",
+  "Someone check Ali's pulse, he's RUNNING",
+  "New personal record: didn't quit immediately",
+  "Ali might be broken, he's still going",
+  "The couch misses Ali already",
+  "Ali is in uncharted territory",
+  "Legends say Ali once ran this far",
+  "Ali discovered muscles he didn't know existed"
+];
+
+// ---- Drawing Helpers ----
+function drawAliFace(cx, cy, radius, expression) {
+  // If we have the loaded image, draw it
+  const img = (expression === 'dead' || expression === 'stumble') ? (aliFaceImg2 || aliFaceImg) : aliFaceImg;
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(img, cx - radius, cy - radius, radius * 2, radius * 2);
+    ctx.restore();
+    // border
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = invincibleTimer > 0 ? '#ff00ff' : '#00e5ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    return;
+  }
+  // Fallback: draw cartoon face
+  ctx.save();
+  // Head
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffcc88';
+  ctx.fill();
+  ctx.strokeStyle = invincibleTimer > 0 ? '#ff00ff' : '#00e5ff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Hair
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(cx, cy - radius * 0.3, radius * 0.95, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  const eyeY = cy - radius * 0.1;
+  const eyeSpacing = radius * 0.3;
+
+  if (expression === 'dead') {
+    // X eyes
+    ctx.strokeStyle = '#ff2d55';
+    ctx.lineWidth = 2;
+    [-1, 1].forEach(side => {
+      const ex = cx + side * eyeSpacing;
+      ctx.beginPath();
+      ctx.moveTo(ex - 3, eyeY - 3); ctx.lineTo(ex + 3, eyeY + 3);
+      ctx.moveTo(ex + 3, eyeY - 3); ctx.lineTo(ex - 3, eyeY + 3);
+      ctx.stroke();
+    });
+    // Wavy mouth
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, cy + radius * 0.35);
+    for(let i = 0; i < 12; i++) {
+      ctx.lineTo(cx - 6 + i, cy + radius * 0.35 + Math.sin(i) * 2);
+    }
+    ctx.strokeStyle = '#ff2d55';
+    ctx.stroke();
+  } else if (expression === 'stumble') {
+    // Dizzy eyes
+    [-1, 1].forEach(side => {
+      const ex = cx + side * eyeSpacing;
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffaa00';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, 2, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.arc(cx, cy + radius * 0.35, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#cc6644';
+    ctx.fill();
+  } else if (expression === 'duck') {
+    // Squinting eyes
+    [-1, 1].forEach(side => {
+      const ex = cx + side * eyeSpacing;
+      ctx.beginPath();
+      ctx.moveTo(ex - 4, eyeY);
+      ctx.lineTo(ex + 4, eyeY);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy + radius * 0.4);
+    ctx.lineTo(cx + 5, cy + radius * 0.4);
+    ctx.strokeStyle = '#cc6644';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    // Normal/running eyes
+    [-1, 1].forEach(side => {
+      const ex = cx + side * eyeSpacing;
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#333';
+      ctx.fill();
+    });
+    // Eyebrows (worried)
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - eyeSpacing - 4, eyeY - 7);
+    ctx.lineTo(cx - eyeSpacing + 4, eyeY - 9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + eyeSpacing + 4, eyeY - 7);
+    ctx.lineTo(cx + eyeSpacing - 4, eyeY - 9);
+    ctx.stroke();
+    // Open mouth (panting)
+    const mouthOpen = Math.sin(frameCount * 0.15) * 2 + 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + radius * 0.38, 4, mouthOpen, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#cc4444';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAli() {
+  const bobY = ali.grounded ? Math.sin(frameCount * 0.2) * 2 : 0;
+  const aliDrawY = ali.y + bobY;
+  const aliCenterX = ali.x + ali.w / 2;
+
+  let expression = 'normal';
+  if (state === STATE.DEAD) expression = 'dead';
+  else if (stumbleTimer > 0) expression = 'stumble';
+  else if (ali.ducking) expression = 'duck';
+
+  const headRadius = ali.ducking ? 14 : 18;
+  const headY = ali.ducking ? aliDrawY + ali.h - 14 : aliDrawY + 18;
+
+  // Invincibility glow
+  if (invincibleTimer > 0) {
+    ctx.save();
+    ctx.shadowColor = '#ff00ff';
+    ctx.shadowBlur = 20 + Math.sin(frameCount * 0.3) * 10;
+    ctx.beginPath();
+    ctx.arc(aliCenterX, headY, headRadius + 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,0,255,0.1)';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Speed boost trail
+  if (speedBoostTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    drawAliFace(aliCenterX - 12, headY, headRadius * 0.7, expression);
+    ctx.globalAlpha = 0.15;
+    drawAliFace(aliCenterX - 22, headY, headRadius * 0.5, expression);
+    ctx.restore();
+  }
+
+  // Body (stick figure)
+  if (!ali.ducking) {
+    ctx.strokeStyle = invincibleTimer > 0 ? '#ff00ff' : '#00e5ff';
+    ctx.lineWidth = 2.5;
+    // Torso
+    ctx.beginPath();
+    ctx.moveTo(aliCenterX, headY + headRadius);
+    ctx.lineTo(aliCenterX, aliDrawY + ali.h - 8);
+    ctx.stroke();
+    // Legs (running animation)
+    const legAng = ali.grounded ? Math.sin(frameCount * 0.25) * 0.5 : -0.3;
+    ctx.beginPath();
+    ctx.moveTo(aliCenterX, aliDrawY + ali.h - 8);
+    ctx.lineTo(aliCenterX - 8 * Math.sin(legAng), aliDrawY + ali.h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(aliCenterX, aliDrawY + ali.h - 8);
+    ctx.lineTo(aliCenterX + 8 * Math.sin(legAng), aliDrawY + ali.h);
+    ctx.stroke();
+    // Arms (flailing)
+    const armAng = ali.grounded ? Math.sin(frameCount * 0.25 + 1) * 0.6 : 0.8;
+    ctx.beginPath();
+    ctx.moveTo(aliCenterX, headY + headRadius + 6);
+    ctx.lineTo(aliCenterX - 10, headY + headRadius + 6 + 10 * Math.cos(armAng));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(aliCenterX, headY + headRadius + 6);
+    ctx.lineTo(aliCenterX + 10, headY + headRadius + 6 - 10 * Math.cos(armAng));
+    ctx.stroke();
+  }
+
+  // Head
+  drawAliFace(aliCenterX, headY, headRadius, expression);
+
+  // Stumble stars
+  if (stumbleTimer > 0) {
+    for (let i = 0; i < 3; i++) {
+      const a = frameCount * 0.1 + i * 2.1;
+      const sx = aliCenterX + Math.cos(a) * 22;
+      const sy = headY - 18 + Math.sin(a) * 8;
+      ctx.fillStyle = '#ffdd00';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('⭐', sx - 5, sy + 3);
+    }
+  }
+}
+
+// ---- Particles ----
+function spawnJumpParticles() {
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x: ali.x + ali.w / 2 + (Math.random() - 0.5) * 20,
+      y: ali.y + ali.h,
+      vx: (Math.random() - 0.5) * 3,
+      vy: Math.random() * 2 + 1,
+      life: 20 + Math.random() * 10,
+      color: '#00e5ff',
+      size: Math.random() * 3 + 1
+    });
+  }
+}
+
+function spawnDeathParticles() {
+  for (let i = 0; i < 25; i++) {
+    particles.push({
+      x: ali.x + ali.w / 2,
+      y: ali.y + ali.h / 2,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      life: 40 + Math.random() * 20,
+      color: Math.random() > 0.5 ? '#ff2d55' : '#ff8800',
+      size: Math.random() * 4 + 2
+    });
+  }
+}
+
+function spawnCollectParticles(x, y, color) {
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 15 + Math.random() * 10,
+      color,
+      size: Math.random() * 3 + 1
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  // Trail particles
+  if (state === STATE.PLAYING && ali.grounded && gameSpeed > 4) {
+    trailParticles.push({
+      x: ali.x + ali.w / 2,
+      y: ali.y + ali.h,
+      life: 10,
+      size: Math.random() * 2 + 0.5,
+      color: speedBoostTimer > 0 ? '#00ff88' : 'rgba(0,229,255,0.3)'
+    });
+  }
+  for (let i = trailParticles.length - 1; i >= 0; i--) {
+    trailParticles[i].life--;
+    trailParticles[i].x -= gameSpeed * 0.5;
+    if (trailParticles[i].life <= 0) trailParticles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 40;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  trailParticles.forEach(p => {
+    ctx.globalAlpha = p.life / 10;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---- Background ----
+function drawBackground() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0D0D1A');
+  grad.addColorStop(0.6, '#151530');
+  grad.addColorStop(1, '#1a1a3e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 0; i < 30; i++) {
+    const sx = ((i * 137.5 + bgOffset3 * 0.1) % (W + 20)) - 10;
+    const sy = (i * 47.3) % (H * 0.4);
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+
+  // Far buildings (parallax layer 1)
+  ctx.fillStyle = '#12122a';
+  for (let i = 0; i < 12; i++) {
+    const bx = ((i * 100 - bgOffset2 * 0.3) % (W + 200)) - 100;
+    const bh = 30 + (i * 37) % 60;
+    ctx.fillRect(bx, GROUND_Y - bh, 40 + (i * 13) % 30, bh);
+    // Windows
+    ctx.fillStyle = (frameCount + i * 7) % 120 < 80 ? 'rgba(0,229,255,0.15)' : 'rgba(255,45,85,0.1)';
+    for (let wy = GROUND_Y - bh + 6; wy < GROUND_Y - 4; wy += 10) {
+      for (let wx = bx + 4; wx < bx + 40 + (i * 13) % 30 - 4; wx += 8) {
+        ctx.fillRect(wx, wy, 3, 4);
+      }
+    }
+    ctx.fillStyle = '#12122a';
+  }
+
+  // Near buildings (parallax layer 2)
+  ctx.fillStyle = '#181838';
+  for (let i = 0; i < 8; i++) {
+    const bx = ((i * 140 - bgOffset * 0.5) % (W + 300)) - 150;
+    const bh = 40 + (i * 53) % 50;
+    ctx.fillRect(bx, GROUND_Y - bh, 55 + (i * 17) % 40, bh);
+    // Neon signs
+    if (i % 3 === 0) {
+      ctx.fillStyle = 'rgba(255,45,85,0.3)';
+      ctx.fillRect(bx + 10, GROUND_Y - bh + 8, 20, 6);
+      ctx.fillStyle = '#181838';
+    }
+  }
+
+  // Ground
+  const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  groundGrad.addColorStop(0, '#2a1a1a');
+  groundGrad.addColorStop(0.1, '#3a2020');
+  groundGrad.addColorStop(1, '#1a0a0a');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  // Ground line
+  ctx.strokeStyle = '#ff2d55';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y);
+  ctx.lineTo(W, GROUND_Y);
+  ctx.stroke();
+
+  // Track lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([20, 30]);
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y + 20);
+  ctx.lineTo(W, GROUND_Y + 20);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Ground dashes (moving)
+  ctx.strokeStyle = 'rgba(0,229,255,0.15)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 20; i++) {
+    const dx = ((i * 50 - groundOffset) % (W + 50)) - 25;
+    ctx.beginPath();
+    ctx.moveTo(dx, GROUND_Y + 8);
+    ctx.lineTo(dx + 15, GROUND_Y + 8);
+    ctx.stroke();
+  }
+}
+
+// ---- Obstacles ----
+function spawnObstacle() {
+  const type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+  const tall = type.name === 'cone' || type.name === 'hurdle';
+  obstacles.push({
+    x: W + 20,
+    y: GROUND_Y - type.h,
+    w: type.w,
+    h: type.h,
+    type: type,
+    passed: false
+  });
+}
+
+function drawObstacle(obs) {
+  const t = obs.type;
+  ctx.save();
+  if (t.round) {
+    ctx.beginPath();
+    ctx.arc(obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w / 2, 0, Math.PI * 2);
+    ctx.fillStyle = t.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (t.name === 'basketball') {
+      ctx.beginPath();
+      ctx.arc(obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w / 2, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // lines
+      ctx.beginPath();
+      ctx.moveTo(obs.x + 4, obs.y + obs.h / 2);
+      ctx.lineTo(obs.x + obs.w - 4, obs.y + obs.h / 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(obs.x + obs.w / 2, obs.y + 4);
+      ctx.lineTo(obs.x + obs.w / 2, obs.y + obs.h - 4);
+      ctx.stroke();
+    }
+  } else if (t.name === 'hurdle') {
+    ctx.fillStyle = t.color;
+    ctx.fillRect(obs.x + 2, obs.y, obs.w - 4, 4);
+    ctx.fillRect(obs.x, obs.y, 4, obs.h);
+    ctx.fillRect(obs.x + obs.w - 4, obs.y, 4, obs.h);
+  } else if (t.name === 'trampoline') {
+    ctx.fillStyle = '#333';
+    ctx.fillRect(obs.x + 4, obs.y + 6, 3, obs.h - 6);
+    ctx.fillRect(obs.x + obs.w - 7, obs.y + 6, 3, obs.h - 6);
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.moveTo(obs.x, obs.y + 6);
+    ctx.quadraticCurveTo(obs.x + obs.w / 2, obs.y - 2, obs.x + obs.w, obs.y + 6);
+    ctx.lineTo(obs.x + obs.w, obs.y + 8);
+    ctx.quadraticCurveTo(obs.x + obs.w / 2, obs.y, obs.x, obs.y + 8);
+    ctx.fill();
+  } else if (t.name === 'dumbbell') {
+    ctx.fillStyle = '#666';
+    ctx.fillRect(obs.x + 8, obs.y + 4, obs.w - 16, 10);
+    ctx.fillStyle = t.color;
+    ctx.fillRect(obs.x, obs.y, 10, obs.h);
+    ctx.fillRect(obs.x + obs.w - 10, obs.y, 10, obs.h);
+  } else if (t.name === 'bench') {
+    ctx.fillStyle = '#5c3a1e';
+    ctx.fillRect(obs.x, obs.y + 4, obs.w, 8);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(obs.x + 4, obs.y + 12, 4, obs.h - 12);
+    ctx.fillRect(obs.x + obs.w - 8, obs.y + 12, 4, obs.h - 12);
+    ctx.fillRect(obs.x - 4, obs.y, 6, 14);
+    ctx.fillRect(obs.x + obs.w - 2, obs.y, 6, 14);
+  } else if (t.name === 'cone') {
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.moveTo(obs.x + obs.w / 2, obs.y);
+    ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+    ctx.lineTo(obs.x, obs.y + obs.h);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(obs.x + 4, obs.y + obs.h * 0.35, obs.w - 8, 3);
+    ctx.fillRect(obs.x + 6, obs.y + obs.h * 0.6, obs.w - 12, 3);
+  }
+  ctx.restore();
+}
+
+// ---- Collectibles ----
+function spawnCollectible() {
+  const excuse = EXCUSE_TEXTS[Math.floor(Math.random() * EXCUSE_TEXTS.length)];
+  collectibles.push({
+    x: W + 20,
+    y: GROUND_Y - 60 - Math.random() * 80,
+    w: 80,
+    h: 20,
+    text: excuse,
+    bobOffset: Math.random() * Math.PI * 2
+  });
+}
+
+function drawCollectible(c) {
+  const by = c.y + Math.sin(frameCount * 0.06 + c.bobOffset) * 6;
+  // Glow
+  ctx.save();
+  ctx.shadowColor = '#00e5ff';
+  ctx.shadowBlur = 8;
+  // Pill shape
+  ctx.fillStyle = 'rgba(0,229,255,0.15)';
+  const r = 10;
+  ctx.beginPath();
+  ctx.roundRect(c.x - 4, by - 4, c.w + 8, c.h + 8, r);
+  ctx.fill();
+  // Border
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(c.x, by, c.w, c.h, 6);
+  ctx.stroke();
+  // Text
+  ctx.fillStyle = '#00e5ff';
+  ctx.font = '600 9px "Chakra Petch", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(c.text, c.x + c.w / 2, by + 14);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// ---- Powerups ----
+function spawnPowerup() {
+  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+  powerups.push({
+    x: W + 20,
+    y: GROUND_Y - 40 - Math.random() * 60,
+    w: 24,
+    h: 24,
+    type,
+    bobOffset: Math.random() * Math.PI * 2
+  });
+}
+
+function drawPowerup(p) {
+  const by = p.y + Math.sin(frameCount * 0.08 + p.bobOffset) * 5;
+  ctx.save();
+  ctx.shadowColor = p.type.color;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.arc(p.x + 12, by + 12, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = p.type.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(p.x + 12, by + 12, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(p.type.emoji, p.x + 12, by + 18);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// ---- HUD ----
+function drawHUD() {
+  ctx.save();
+  // Score
+  ctx.fillStyle = '#00e5ff';
+  ctx.font = '700 18px "Russo One", sans-serif';
+  ctx.fillText(`${Math.floor(score)} ft`, 14, 28);
+
+  // Coins
+  ctx.fillStyle = '#ffaa00';
+  ctx.font = '600 13px "Chakra Petch", sans-serif';
+  ctx.fillText(`Excuses: ${coins}`, 14, 48);
+
+  // Combo
+  if (combo > 1) {
+    ctx.fillStyle = '#ff2d55';
+    ctx.font = '700 14px "Russo One", sans-serif';
+    ctx.fillText(`x${combo} COMBO`, 14, 66);
+  }
+
+  // Stamina bar
+  const barW = 120, barH = 8, barX = W - barW - 14, barY = 14;
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(barX, barY, barW, barH);
+  const staminaRatio = stamina / maxStamina;
+  const staminaColor = staminaRatio > 0.5 ? '#00ff88' : staminaRatio > 0.2 ? '#ffaa00' : '#ff2d55';
+  ctx.fillStyle = staminaColor;
+  ctx.fillRect(barX, barY, barW * staminaRatio, barH);
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barW, barH);
+  ctx.fillStyle = '#aaa';
+  ctx.font = '600 9px "Chakra Petch", sans-serif';
+  ctx.fillText('STAMINA', barX, barY + barH + 12);
+
+  // Speed indicator
+  ctx.fillStyle = '#666';
+  ctx.font = '600 9px "Chakra Petch", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(`Speed: ${gameSpeed.toFixed(1)}`, W - 14, barY + barH + 26);
+  ctx.textAlign = 'left';
+
+  // High score
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '600 10px "Chakra Petch", sans-serif';
+  ctx.fillText(`Best: ${highScore} ft`, 14, H - 10);
+
+  // Active powerup indicators
+  if (speedBoostTimer > 0) {
+    ctx.fillStyle = '#00ff88';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`⚡ ${Math.ceil(speedBoostTimer / 60)}s`, W - 60, 55);
+  }
+  if (invincibleTimer > 0) {
+    ctx.fillStyle = '#ff00ff';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`🛋️ ${Math.ceil(invincibleTimer / 60)}s`, W - 60, 70);
+  }
+
+  // Milestone message
+  if (milestoneMsgTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, milestoneMsgTimer / 30);
+    ctx.fillStyle = '#ff2d55';
+    ctx.font = '700 16px "Russo One", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(milestoneMsg, W / 2, 80);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+// ---- Menu Screen ----
+function drawMenu() {
+  drawBackground();
+
+  ctx.save();
+  // Title
+  ctx.fillStyle = '#ff2d55';
+  ctx.font = '700 52px "Russo One", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#ff2d55';
+  ctx.shadowBlur = 30;
+  ctx.fillText('ALI RUN', W / 2, 100);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.fillStyle = '#00e5ff';
+  ctx.font = '600 14px "Chakra Petch", sans-serif';
+  ctx.fillText('The World\'s Laziest Endless Runner', W / 2, 125);
+
+  // Ali preview
+  drawAliFace(W / 2, 170, 24, 'normal');
+
+  // High score
+  if (highScore > 0) {
+    ctx.fillStyle = '#ffaa00';
+    ctx.font = '600 13px "Chakra Petch", sans-serif';
+    ctx.fillText(`High Score: ${highScore} ft`, W / 2, 215);
+  }
+
+  // Instructions
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '600 13px "Chakra Petch", sans-serif';
+  ctx.fillText('Space / Tap to Start', W / 2, 245);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '400 11px "Chakra Petch", sans-serif';
+  ctx.fillText('(Ali would rather not)', W / 2, 262);
+
+  // Controls hint
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.font = '400 10px "Chakra Petch", sans-serif';
+  ctx.fillText('Space/Up = Jump  |  Down = Duck  |  Double-tap = Double Jump (barely)', W / 2, 285);
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// ---- Death Screen ----
+function drawDeathScreen() {
+  ctx.save();
+  // Overlay
+  ctx.fillStyle = 'rgba(13,13,26,0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+
+  // Death message
+  ctx.fillStyle = '#ff2d55';
+  ctx.font = '700 22px "Russo One", sans-serif';
+  ctx.fillText(deathMessage, W / 2, 70);
+
+  // Ali face
+  drawAliFace(W / 2, 115, 22, 'dead');
+
+  // Stats
+  ctx.fillStyle = '#00e5ff';
+  ctx.font = '700 28px "Russo One", sans-serif';
+  ctx.fillText(`${Math.floor(score)} feet`, W / 2, 170);
+
+  ctx.fillStyle = '#ffaa00';
+  ctx.font = '600 14px "Chakra Petch", sans-serif';
+  ctx.fillText(`Excuses collected: ${coins}`, W / 2, 195);
+
+  if (Math.floor(score) >= highScore && highScore > 0) {
+    ctx.fillStyle = '#ff2d55';
+    ctx.font = '700 14px "Russo One", sans-serif';
+    ctx.fillText('NEW HIGH SCORE!', W / 2, 218);
+  }
+
+  // Retry
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '600 14px "Chakra Petch", sans-serif';
+  ctx.fillText('Space / Tap to Retry', W / 2, 250);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '400 11px "Chakra Petch", sans-serif';
+  ctx.fillText('Ali collapsed at ' + Math.floor(score) + ' feet. Pathetic.', W / 2, 272);
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// ---- Collision ----
+function collides(a, b) {
+  const shrink = 4;
+  return a.x + shrink < b.x + b.w &&
+         a.x + a.w - shrink > b.x &&
+         a.y + shrink < b.y + b.h &&
+         a.y + a.h - shrink > b.y;
+}
+
+// ---- Game Logic ----
+function resetGame() {
+  score = 0;
+  coins = 0;
+  combo = 0;
+  comboTimer = 0;
+  stamina = maxStamina;
+  gameSpeed = baseSpeed;
+  speedBoostTimer = 0;
+  invincibleTimer = 0;
+  frameCount = 0;
+  lastMilestone = 0;
+  milestoneMsg = '';
+  milestoneMsgTimer = 0;
+  stumbleTimer = 0;
+  stumbleCooldown = 0;
+  shakeX = 0; shakeY = 0;
+  particles = [];
+  trailParticles = [];
+  obstacles = [];
+  collectibles = [];
+  powerups = [];
+  ali.y = GROUND_Y - ali.h;
+  ali.vy = 0;
+  ali.grounded = true;
+  ali.ducking = false;
+  ali.jumpCount = 0;
+}
+
+let spawnTimer = 0;
+let collectibleTimer = 0;
+let powerupTimer = 0;
+
+function update() {
+  if (state !== STATE.PLAYING) return;
+  frameCount++;
+
+  // Speed progression
+  const speedIncrease = Math.min(frameCount * 0.0003, 4.5);
+  gameSpeed = baseSpeed + speedIncrease;
+
+  // Speed boost
+  if (speedBoostTimer > 0) {
+    speedBoostTimer--;
+    gameSpeed += 2.5;
+  }
+
+  // Invincibility
+  if (invincibleTimer > 0) invincibleTimer--;
+
+  // Stamina drain
+  stamina -= 0.025 + (gameSpeed - baseSpeed) * 0.008;
+  if (stamina < 0) stamina = 0;
+  if (stamina <= 0) {
+    gameSpeed *= 0.7; // massive slowdown
+  } else if (stamina < 20) {
+    gameSpeed *= 0.85;
+  }
+
+  // Random stumble
+  if (stumbleCooldown > 0) stumbleCooldown--;
+  if (stumbleTimer > 0) {
+    stumbleTimer--;
+    gameSpeed *= 0.5;
+  } else if (ali.grounded && Math.random() < 0.0008 && stumbleCooldown <= 0 && frameCount > 200) {
+    stumbleTimer = 40;
+    stumbleCooldown = 400;
+  }
+
+  // Score
+  score += gameSpeed * 0.15;
+
+  // Milestones
+  const milestone = Math.floor(score / 500);
+  if (milestone > lastMilestone) {
+    lastMilestone = milestone;
+    milestoneMsg = MILESTONE_MESSAGES[Math.min(milestone - 1, MILESTONE_MESSAGES.length - 1)];
+    milestoneMsgTimer = 150;
+  }
+  if (milestoneMsgTimer > 0) milestoneMsgTimer--;
+
+  // Background scroll
+  bgOffset += gameSpeed;
+  bgOffset2 += gameSpeed * 0.7;
+  bgOffset3 += gameSpeed * 0.3;
+  groundOffset += gameSpeed;
+
+  // Ali physics
+  if (!ali.grounded) {
+    ali.vy += GRAVITY;
+    ali.y += ali.vy;
+    if (ali.y >= GROUND_Y - ali.h) {
+      ali.y = GROUND_Y - ali.h;
+      ali.vy = 0;
+      ali.grounded = true;
+      ali.jumpCount = 0;
+    }
+  }
+
+  // Ducking hitbox
+  if (ali.ducking) {
+    ali.h = 28;
+    ali.y = GROUND_Y - ali.h;
+  } else {
+    ali.h = 48;
+    if (ali.grounded) ali.y = GROUND_Y - ali.h;
+  }
+
+  // Spawn obstacles
+  spawnTimer--;
+  if (spawnTimer <= 0) {
+    spawnObstacle();
+    spawnTimer = Math.max(35, 90 - gameSpeed * 5) + Math.random() * 40;
+  }
+
+  // Spawn collectibles
+  collectibleTimer--;
+  if (collectibleTimer <= 0) {
+    spawnCollectible();
+    collectibleTimer = 120 + Math.random() * 180;
+  }
+
+  // Spawn powerups
+  powerupTimer--;
+  if (powerupTimer <= 0) {
+    spawnPowerup();
+    powerupTimer = 300 + Math.random() * 400;
+  }
+
+  // Update obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    obstacles[i].x -= gameSpeed;
+    if (obstacles[i].x + obstacles[i].w < -10) {
+      if (!obstacles[i].passed) {
+        // passed obstacle bonus
+      }
+      obstacles.splice(i, 1);
+      continue;
+    }
+    // Collision
+    if (!obstacles[i].passed && collides(ali, obstacles[i])) {
+      if (invincibleTimer > 0) {
+        obstacles[i].passed = true;
+        spawnCollectParticles(obstacles[i].x + obstacles[i].w / 2, obstacles[i].y, '#ff00ff');
+        obstacles.splice(i, 1);
+      } else {
+        // Death
+        die();
+        return;
+      }
+    } else if (!obstacles[i].passed && obstacles[i].x + obstacles[i].w < ali.x) {
+      obstacles[i].passed = true;
+    }
+  }
+
+  // Update collectibles
+  for (let i = collectibles.length - 1; i >= 0; i--) {
+    collectibles[i].x -= gameSpeed;
+    if (collectibles[i].x + collectibles[i].w < -10) {
+      collectibles.splice(i, 1);
+      combo = 0;
+      continue;
+    }
+    // Collection
+    const c = collectibles[i];
+    const by = c.y + Math.sin(frameCount * 0.06 + c.bobOffset) * 6;
+    if (ali.x + ali.w > c.x && ali.x < c.x + c.w &&
+        ali.y + ali.h > by && ali.y < by + c.h) {
+      coins++;
+      combo++;
+      comboTimer = 120;
+      score += 10 * combo;
+      spawnCollectParticles(c.x + c.w / 2, by, '#00e5ff');
+      collectibles.splice(i, 1);
+    }
+  }
+
+  // Combo decay
+  if (comboTimer > 0) {
+    comboTimer--;
+  } else {
+    combo = 0;
+  }
+
+  // Update powerups
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    powerups[i].x -= gameSpeed;
+    if (powerups[i].x + powerups[i].w < -10) {
+      powerups.splice(i, 1);
+      continue;
+    }
+    const p = powerups[i];
+    const by = p.y + Math.sin(frameCount * 0.08 + p.bobOffset) * 5;
+    if (ali.x + ali.w > p.x && ali.x < p.x + p.w &&
+        ali.y + ali.h > by && ali.y < by + p.h) {
+      applyPowerup(p.type);
+      spawnCollectParticles(p.x + 12, by + 12, p.type.color);
+      powerups.splice(i, 1);
+    }
+  }
+
+  updateParticles();
+
+  // Screen shake decay
+  shakeX *= 0.85;
+  shakeY *= 0.85;
+}
+
+function applyPowerup(type) {
+  switch (type.effect) {
+    case 'speed':
+      speedBoostTimer = 180; // 3 seconds
+      break;
+    case 'invincible':
+      invincibleTimer = 300; // 5 seconds
+      break;
+    case 'stamina':
+      stamina = Math.min(maxStamina, stamina + 50);
+      break;
+    case 'stamina_small':
+      stamina = Math.min(maxStamina, stamina + 25);
+      break;
+  }
+}
+
+function die() {
+  state = STATE.DEAD;
+  deathMessage = DEATH_MESSAGES[Math.floor(Math.random() * DEATH_MESSAGES.length)];
+  spawnDeathParticles();
+  shakeX = 8;
+  shakeY = 5;
+
+  const finalScore = Math.floor(score);
+  if (finalScore > highScore) {
+    highScore = finalScore;
+    localStorage.setItem('aliRunHigh', highScore.toString());
+  }
+}
+
+function jump() {
+  if (state === STATE.MENU) {
+    state = STATE.PLAYING;
+    resetGame();
+    return;
+  }
+  if (state === STATE.DEAD) {
+    state = STATE.PLAYING;
+    resetGame();
+    return;
+  }
+  if (state !== STATE.PLAYING) return;
+
+  if (ali.jumpCount < ali.maxJumps) {
+    const force = ali.jumpCount === 0 ? JUMP_FORCE : JUMP_FORCE_2;
+    ali.vy = force;
+    ali.grounded = false;
+    ali.jumpCount++;
+    ali.ducking = false;
+    spawnJumpParticles();
+  }
+}
+
+function duckStart() {
+  if (state !== STATE.PLAYING) return;
+  if (ali.grounded) {
+    ali.ducking = true;
+  } else {
+    // Fast fall
+    ali.vy = Math.max(ali.vy, 5);
+  }
+}
+
+function duckEnd() {
+  ali.ducking = false;
+}
+
+// ---- Main Loop ----
+function draw() {
+  ctx.save();
+  ctx.translate(shakeX * (Math.random() - 0.5), shakeY * (Math.random() - 0.5));
+
+  if (state === STATE.MENU) {
+    drawMenu();
+  } else {
+    drawBackground();
+
+    // Draw game objects
+    obstacles.forEach(drawObstacle);
+    collectibles.forEach(drawCollectible);
+    powerups.forEach(drawPowerup);
+    drawParticles();
+    drawAli();
+    drawHUD();
+
+    if (state === STATE.DEAD) {
+      drawDeathScreen();
+    }
+  }
+
+  ctx.restore();
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ---- Input ----
+let duckHeld = false;
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    jump();
+  }
+  if (e.code === 'ArrowDown' && !duckHeld) {
+    e.preventDefault();
+    duckHeld = true;
+    duckStart();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.code === 'ArrowDown') {
+    duckHeld = false;
+    duckEnd();
+  }
+});
+
+// Canvas click/tap for jump
+canvas.addEventListener('click', e => {
+  e.preventDefault();
+  jump();
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  // If touch is in lower half, duck, else jump
+  const rect = canvas.getBoundingClientRect();
+  const ty = (e.touches[0].clientY - rect.top) / rect.height;
+  if (ty > 0.7) {
+    duckStart();
+    setTimeout(duckEnd, 300);
+  } else {
+    jump();
+  }
+}, { passive: false });
+
+// Touch controls
+function handleJump(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  jump();
+}
+function handleDuckStart(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  duckStart();
+}
+function handleDuckEnd(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  duckEnd();
+}
+// Expose for inline handlers
+window.handleJump = handleJump;
+window.handleDuckStart = handleDuckStart;
+window.handleDuckEnd = handleDuckEnd;
+
+// ---- roundRect polyfill ----
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === 'number') r = [r, r, r, r];
+    this.moveTo(x + r[0], y);
+    this.lineTo(x + w - r[1], y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r[1]);
+    this.lineTo(x + w, y + h - r[2]);
+    this.quadraticCurveTo(x + w, y + h, x + w - r[2], y + h);
+    this.lineTo(x + r[3], y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r[3]);
+    this.lineTo(x, y + r[0]);
+    this.quadraticCurveTo(x, y, x + r[0], y);
+    this.closePath();
+  };
+}
+
+// ---- Start ----
+ali.y = GROUND_Y - ali.h;
+gameLoop();
+</script>
+</body>
+</html>

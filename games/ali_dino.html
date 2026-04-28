@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Dino</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem;
+         font-family:'Russo One',sans-serif; letter-spacing:2px; }
+  .hud b { color:var(--cyan); }
+  canvas { background:#0D0D1A; border:2px solid var(--cyan); border-radius:10px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); max-width:100%; touch-action:none; cursor:pointer; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI DINO</h1>
+<div class="sub">Jump cacti, duck under birds. The Chrome offline classic, Ali edition.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>HI: <b id="hi">0</b></span>
+</div>
+<canvas id="c" width="900" height="280"></canvas>
+<button class="btn" id="start">START</button>
+<div class="tip"><b>SPACE</b> or <b>↑</b> jump &bull; <b>↓</b> duck &bull; tap to jump on mobile</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var hi = parseInt(localStorage.getItem('aliDinoHi')||'0', 10);
+  document.getElementById('hi').textContent = hi;
+
+  var GROUND_Y = H - 40;
+  var GRAVITY = 2400;
+  var JUMP = 760;
+  var SCROLL = 360;
+
+  var player = { x: 80, y: GROUND_Y - 50, w: 50, h: 50, vy: 0, grounded: true, ducking: false };
+  var obstacles = []; // { type, x, y, w, h }
+  var stars = [];
+  var clouds = [];
+  for (var i = 0; i < 30; i++) stars.push({ x: Math.random()*W, y: Math.random()*GROUND_Y*0.6, s: Math.random()*1.5 + 0.5, vx: Math.random() * 12 + 4 });
+  for (var c = 0; c < 4; c++) clouds.push({ x: Math.random() * W, y: 30 + Math.random() * 80, w: 60 + Math.random()*30 });
+
+  var score = 0, running = false, gameOver = false, scrollSpeed = SCROLL;
+  var spawnTimer = 0;
+
+  function spawnObstacle() {
+    var roll = Math.random();
+    if (roll < 0.7) {
+      // Cactus (1-3 grouped)
+      var n = roll < 0.4 ? 1 : (roll < 0.6 ? 2 : 3);
+      var w = n * 22;
+      obstacles.push({ type: 'cactus', x: W + 20, y: GROUND_Y - 50, w: w, h: 50 });
+    } else {
+      // Bird (high or low)
+      var by = Math.random() < 0.5 ? GROUND_Y - 90 : GROUND_Y - 50;
+      obstacles.push({ type: 'bird', x: W + 20, y: by, w: 46, h: 30, wing: 0 });
+    }
+  }
+
+  function startGame() {
+    obstacles = [];
+    score = 0;
+    scrollSpeed = SCROLL;
+    spawnTimer = 0.5;
+    player.y = GROUND_Y - 50;
+    player.vy = 0;
+    player.grounded = true;
+    player.ducking = false;
+    gameOver = false;
+    running = true;
+    document.getElementById('start').style.display = 'none';
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+    if (Math.floor(score) > hi) {
+      hi = Math.floor(score);
+      localStorage.setItem('aliDinoHi', String(hi));
+      document.getElementById('hi').textContent = hi;
+    }
+    document.getElementById('start').textContent = 'TRY AGAIN';
+    document.getElementById('start').style.display = 'inline-block';
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+      if (running && player.grounded && !player.ducking) {
+        player.vy = -JUMP;
+        player.grounded = false;
+      }
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+      if (running) player.ducking = true;
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('keyup', function(e){
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') player.ducking = false;
+  });
+  canvas.addEventListener('click', function(){
+    if (running && player.grounded) { player.vy = -JUMP; player.grounded = false; }
+  });
+  canvas.addEventListener('touchstart', function(e){
+    if (running && player.grounded) { player.vy = -JUMP; player.grounded = false; }
+    e.preventDefault();
+  }, {passive:false});
+  document.getElementById('start').addEventListener('click', startGame);
+
+  function update(dt) {
+    score += dt * 12;
+    document.getElementById('score').textContent = Math.floor(score);
+    scrollSpeed = SCROLL + Math.min(400, score * 0.6);
+
+    // Player physics
+    if (player.ducking && player.grounded) {
+      player.h = 30; player.y = GROUND_Y - 30;
+    } else {
+      player.h = 50;
+    }
+    player.vy += GRAVITY * dt;
+    player.y += player.vy * dt;
+    if (player.y + player.h >= GROUND_Y) {
+      player.y = GROUND_Y - player.h;
+      player.vy = 0;
+      player.grounded = true;
+    } else {
+      player.grounded = false;
+    }
+
+    // Spawn
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnObstacle();
+      spawnTimer = 0.8 + Math.random() * 1.2 - Math.min(0.5, score * 0.001);
+      if (spawnTimer < 0.4) spawnTimer = 0.4;
+    }
+
+    // Move obstacles
+    for (var i = obstacles.length - 1; i >= 0; i--) {
+      var o = obstacles[i];
+      o.x -= scrollSpeed * dt;
+      if (o.type === 'bird') o.wing = (o.wing + dt * 8) % (Math.PI * 2);
+      if (o.x + o.w < -20) { obstacles.splice(i, 1); continue; }
+      // Collision (shrink hitboxes a bit)
+      var pr = { x: player.x + 6, y: player.y + 6, w: player.w - 12, h: player.h - 12 };
+      var or = { x: o.x + 4, y: o.y + 4, w: o.w - 8, h: o.h - 8 };
+      if (pr.x < or.x + or.w && pr.x + pr.w > or.x && pr.y < or.y + or.h && pr.y + pr.h > or.y) {
+        endGame();
+        return;
+      }
+    }
+
+    // Stars/clouds parallax
+    for (var s = 0; s < stars.length; s++) {
+      stars[s].x -= stars[s].vx * dt;
+      if (stars[s].x < 0) stars[s].x = W;
+    }
+    for (var cl = 0; cl < clouds.length; cl++) {
+      clouds[cl].x -= 30 * dt;
+      if (clouds[cl].x + clouds[cl].w < 0) clouds[cl].x = W;
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+    // Stars
+    for (var s = 0; s < stars.length; s++) {
+      ctx.fillStyle = 'rgba(255,255,255,' + (stars[s].s / 2) + ')';
+      ctx.fillRect(stars[s].x, stars[s].y, stars[s].s, stars[s].s);
+    }
+    // Clouds
+    ctx.fillStyle = 'rgba(124,58,237,0.3)';
+    for (var cl = 0; cl < clouds.length; cl++) {
+      ctx.beginPath();
+      ctx.arc(clouds[cl].x, clouds[cl].y, 12, 0, Math.PI*2);
+      ctx.arc(clouds[cl].x + 18, clouds[cl].y - 5, 14, 0, Math.PI*2);
+      ctx.arc(clouds[cl].x + 36, clouds[cl].y, 12, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // Ground
+    ctx.save();
+    ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#00FFFF';
+    ctx.fillRect(0, GROUND_Y, W, 2);
+    ctx.restore();
+    // Bumps on ground
+    ctx.fillStyle = 'rgba(0,255,255,0.4)';
+    for (var b = 0; b < 8; b++) {
+      var bx = ((b * 130) - (Date.now() / 8 * (scrollSpeed/360))) % (W + 130);
+      if (bx < 0) bx += W + 130;
+      ctx.fillRect(bx, GROUND_Y + 4, 14, 2);
+    }
+
+    // Obstacles
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i];
+      if (o.type === 'cactus') {
+        ctx.save();
+        ctx.shadowColor = '#FF006E'; ctx.shadowBlur = 10;
+        ctx.fillStyle = '#FF006E';
+        // Multiple cacti
+        var nCac = Math.max(1, Math.round(o.w / 22));
+        for (var c = 0; c < nCac; c++) {
+          var cx = o.x + c * 22;
+          ctx.fillRect(cx + 6, o.y + 4, 8, o.h - 8);
+          // Arms
+          ctx.fillRect(cx + 2, o.y + 14, 5, 14);
+          ctx.fillRect(cx + 14, o.y + 18, 5, 14);
+        }
+        ctx.restore();
+      } else if (o.type === 'bird') {
+        var wingY = Math.sin(o.wing) * 8;
+        ctx.save();
+        ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+        ctx.fillStyle = '#FFD700';
+        // Body
+        ctx.beginPath();
+        ctx.ellipse(o.x + 24, o.y + 14, 18, 8, 0, 0, Math.PI*2);
+        ctx.fill();
+        // Wings
+        ctx.beginPath();
+        ctx.moveTo(o.x + 14, o.y + 14);
+        ctx.lineTo(o.x + 24, o.y + 14 + wingY);
+        ctx.lineTo(o.x + 34, o.y + 14);
+        ctx.closePath();
+        ctx.fill();
+        // Beak
+        ctx.fillStyle = '#FF006E';
+        ctx.beginPath();
+        ctx.moveTo(o.x + 42, o.y + 14);
+        ctx.lineTo(o.x + 50, o.y + 12);
+        ctx.lineTo(o.x + 50, o.y + 16);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        // Ali face on bird
+        if (aliImg.complete && aliImg.naturalWidth) {
+          var fs = 16;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(o.x + 22, o.y + 14, fs/2, 0, Math.PI*2);
+          ctx.clip();
+          ctx.drawImage(aliImg, o.x + 22 - fs/2, o.y + 14 - fs/2, fs, fs);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Player (Ali "dino")
+    var px = player.x, py = player.y;
+    ctx.save();
+    ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 16;
+    ctx.fillStyle = '#00FFFF';
+    if (player.ducking && player.grounded) {
+      // Ducking — flatter rectangle
+      ctx.fillRect(px - 4, py + 4, player.w + 12, player.h - 8);
+    } else {
+      ctx.fillRect(px, py, player.w, player.h);
+    }
+    ctx.restore();
+    // Ali face on the cube
+    if (aliImg.complete && aliImg.naturalWidth) {
+      var size = Math.min(player.w, player.h) - 8;
+      var fcx = px + player.w/2;
+      var fcy = py + player.h/2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(fcx, fcy, size/2, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, fcx - size/2, fcy - size/2, size, size);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(fcx, fcy, size/2, 0, Math.PI*2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 28px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 8);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.font = "bold 16px 'Russo One', sans-serif";
+      ctx.fillText('Score: ' + Math.floor(score), W/2, H/2 + 18);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Connect</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 20%, rgba(255,0,110,0.08), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--pink); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(255,0,110,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .board-wrap { padding:12px; background:linear-gradient(135deg,#1a1a3a,#0a0a20);
+                border:2px solid var(--pink); border-radius:12px;
+                box-shadow:0 0 30px rgba(255,0,110,0.3); }
+  .board { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .col { display:flex; flex-direction:column; gap:4px; cursor:pointer; }
+  .cell { aspect-ratio:1; background:#0D0D1A; border-radius:50%;
+          border:2px solid rgba(255,0,110,0.3); width:50px;
+          display:flex; align-items:center; justify-content:center;
+          position:relative; transition:transform 0.12s; }
+  .col:hover .cell:last-child { box-shadow:inset 0 0 10px rgba(0,255,255,0.3); }
+  .cell.p1 { background:url('/ali.jpg') center/cover no-repeat, #00FFFF;
+             border-color:var(--cyan); box-shadow:0 0 10px rgba(0,255,255,0.6); }
+  .cell.p2 { background:url('/ali.jpg') center/cover no-repeat, #FF006E;
+             border-color:var(--pink); box-shadow:0 0 10px rgba(255,0,110,0.6);
+             filter:hue-rotate(220deg) saturate(1.2); }
+  .cell.win { animation:winPulse 0.8s ease-in-out infinite; }
+  @keyframes winPulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.15);box-shadow:0 0 20px #FFD700;} }
+  .controls { margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--pink),var(--purple));
+         border:none; color:#fff; padding:10px 24px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(255,0,110,0.3); }
+  .btn.secondary { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan); box-shadow:none; }
+  select.btn { padding:10px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+  .msg { font-family:'Russo One',sans-serif; font-size:1.3rem; margin-top:12px;
+         min-height:30px; letter-spacing:2px; }
+  .msg.you { color:var(--cyan); text-shadow:0 0 14px rgba(0,255,255,0.6); }
+  .msg.cpu { color:var(--pink); text-shadow:0 0 14px rgba(255,0,110,0.6); }
+  .msg.draw { color:#FFD700; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI CONNECT</h1>
+<div class="sub">Drop Alis. Get 4 in a row. Beat the CPU.</div>
+<div class="hud">
+  <span>TURN: <b id="turn">YOU</b></span>
+  <span>WINS: <b id="wins">0</b></span>
+  <span>LOSSES: <b id="losses">0</b></span>
+</div>
+<div class="board-wrap">
+  <div class="board" id="board"></div>
+</div>
+<div class="msg" id="msg">&nbsp;</div>
+<div class="controls">
+  <button class="btn" id="reset">NEW GAME</button>
+  <select class="btn secondary" id="diff">
+    <option value="2">EASY</option>
+    <option value="4" selected>MEDIUM</option>
+    <option value="6">HARD</option>
+  </select>
+</div>
+<div class="tip">Click a column to drop your Ali &bull; Connect 4 vertically, horizontally, or diagonally</div>
+
+<script>
+(function(){
+  var ROWS = 6, COLS = 7;
+  var board = document.getElementById('board');
+  var msgEl = document.getElementById('msg');
+  var turnEl = document.getElementById('turn');
+  var winsEl = document.getElementById('wins');
+  var lossesEl = document.getElementById('losses');
+  var diffSel = document.getElementById('diff');
+  var resetBtn = document.getElementById('reset');
+
+  var wins = parseInt(localStorage.getItem('aliConnectWins')||'0', 10);
+  var losses = parseInt(localStorage.getItem('aliConnectLosses')||'0', 10);
+  winsEl.textContent = wins; lossesEl.textContent = losses;
+
+  var grid = []; // grid[col][row] = 0 empty, 1 player, 2 cpu
+  var gameOver = false, yourTurn = true, thinking = false;
+
+  function build() {
+    grid = [];
+    for (var c = 0; c < COLS; c++) { grid[c] = []; for (var r = 0; r < ROWS; r++) grid[c][r] = 0; }
+    while (board.firstChild) board.removeChild(board.firstChild);
+    for (var col = 0; col < COLS; col++) {
+      var colEl = document.createElement('div');
+      colEl.className = 'col';
+      colEl.dataset.col = col;
+      for (var row = 0; row < ROWS; row++) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.col = col;
+        cell.dataset.row = row;
+        colEl.appendChild(cell);
+      }
+      colEl.addEventListener('click', function(ev){
+        var c = parseInt(this.dataset.col, 10);
+        handleClick(c);
+      });
+      board.appendChild(colEl);
+    }
+    gameOver = false; yourTurn = true; thinking = false;
+    msgEl.textContent = 'Your move';
+    msgEl.className = 'msg you';
+    turnEl.textContent = 'YOU';
+  }
+
+  function dropPiece(col, player) {
+    for (var r = ROWS - 1; r >= 0; r--) {
+      if (grid[col][r] === 0) {
+        grid[col][r] = player;
+        return r;
+      }
+    }
+    return -1; // column full
+  }
+
+  function render() {
+    for (var col = 0; col < COLS; col++) {
+      for (var row = 0; row < ROWS; row++) {
+        var cell = board.children[col].children[row];
+        cell.classList.remove('p1', 'p2');
+        if (grid[col][row] === 1) cell.classList.add('p1');
+        else if (grid[col][row] === 2) cell.classList.add('p2');
+      }
+    }
+  }
+
+  function checkWin(player) {
+    // Returns array of winning cells or null
+    var dirs = [[1,0],[0,1],[1,1],[1,-1]];
+    for (var c = 0; c < COLS; c++) {
+      for (var r = 0; r < ROWS; r++) {
+        if (grid[c][r] !== player) continue;
+        for (var d = 0; d < dirs.length; d++) {
+          var dx = dirs[d][0], dy = dirs[d][1];
+          var cells = [[c,r]];
+          for (var k = 1; k < 4; k++) {
+            var nc = c + dx*k, nr = r + dy*k;
+            if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) break;
+            if (grid[nc][nr] === player) cells.push([nc,nr]);
+            else break;
+          }
+          if (cells.length >= 4) return cells;
+        }
+      }
+    }
+    return null;
+  }
+
+  function highlightWin(cells) {
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i][0], r = cells[i][1];
+      board.children[c].children[r].classList.add('win');
+    }
+  }
+
+  function isFull() {
+    for (var c = 0; c < COLS; c++) if (grid[c][0] === 0) return false;
+    return true;
+  }
+
+  function handleClick(col) {
+    if (gameOver || !yourTurn || thinking) return;
+    var row = dropPiece(col, 1);
+    if (row === -1) return;
+    render();
+    var w = checkWin(1);
+    if (w) { endGame('you', w); return; }
+    if (isFull()) { endGame('draw', null); return; }
+    yourTurn = false;
+    turnEl.textContent = 'CPU';
+    msgEl.textContent = 'CPU is thinking...';
+    msgEl.className = 'msg cpu';
+    thinking = true;
+    setTimeout(cpuMove, 420);
+  }
+
+  function cpuMove() {
+    var depth = parseInt(diffSel.value, 10);
+    var best = chooseMove(depth);
+    var row = dropPiece(best, 2);
+    render();
+    var w = checkWin(2);
+    if (w) { endGame('cpu', w); return; }
+    if (isFull()) { endGame('draw', null); return; }
+    yourTurn = true;
+    turnEl.textContent = 'YOU';
+    msgEl.textContent = 'Your move';
+    msgEl.className = 'msg you';
+    thinking = false;
+  }
+
+  // --- Minimax with alpha-beta ---
+  function chooseMove(depth) {
+    var best = -Infinity, bestCol = 3;
+    var validCols = [];
+    for (var c = 0; c < COLS; c++) if (grid[c][0] === 0) validCols.push(c);
+    // Order: prefer center columns
+    validCols.sort(function(a,b){ return Math.abs(3-a) - Math.abs(3-b); });
+    for (var i = 0; i < validCols.length; i++) {
+      var c2 = validCols[i];
+      var r = placeTemp(c2, 2);
+      var score = minimax(depth - 1, -Infinity, Infinity, false);
+      undoTemp(c2, r);
+      if (score > best) { best = score; bestCol = c2; }
+    }
+    return bestCol;
+  }
+  function placeTemp(col, player) {
+    for (var r = ROWS - 1; r >= 0; r--) {
+      if (grid[col][r] === 0) { grid[col][r] = player; return r; }
+    }
+    return -1;
+  }
+  function undoTemp(col, row) { if (row >= 0) grid[col][row] = 0; }
+
+  function minimax(depth, alpha, beta, maximizing) {
+    if (checkWin(2)) return 10000 + depth;
+    if (checkWin(1)) return -10000 - depth;
+    if (isFull() || depth === 0) return evaluate();
+    var validCols = [];
+    for (var c = 0; c < COLS; c++) if (grid[c][0] === 0) validCols.push(c);
+    validCols.sort(function(a,b){ return Math.abs(3-a) - Math.abs(3-b); });
+    if (maximizing) {
+      var best = -Infinity;
+      for (var i = 0; i < validCols.length; i++) {
+        var col = validCols[i];
+        var r = placeTemp(col, 2);
+        var score = minimax(depth - 1, alpha, beta, false);
+        undoTemp(col, r);
+        if (score > best) best = score;
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break;
+      }
+      return best;
+    } else {
+      var best2 = Infinity;
+      for (var j = 0; j < validCols.length; j++) {
+        var col2 = validCols[j];
+        var r2 = placeTemp(col2, 1);
+        var score2 = minimax(depth - 1, alpha, beta, true);
+        undoTemp(col2, r2);
+        if (score2 < best2) best2 = score2;
+        if (best2 < beta) beta = best2;
+        if (alpha >= beta) break;
+      }
+      return best2;
+    }
+  }
+  function evaluate() {
+    // Count windows of 4 for each player
+    var score = 0;
+    // Center column preference
+    for (var r = 0; r < ROWS; r++) {
+      if (grid[3][r] === 2) score += 3;
+      else if (grid[3][r] === 1) score -= 3;
+    }
+    var dirs = [[1,0],[0,1],[1,1],[1,-1]];
+    for (var c = 0; c < COLS; c++) {
+      for (var rr = 0; rr < ROWS; rr++) {
+        for (var d = 0; d < dirs.length; d++) {
+          var dx = dirs[d][0], dy = dirs[d][1];
+          var endC = c + dx * 3, endR = rr + dy * 3;
+          if (endC < 0 || endR < 0 || endC >= COLS || endR >= ROWS) continue;
+          var p1c = 0, p2c = 0;
+          for (var k = 0; k < 4; k++) {
+            var v = grid[c + dx*k][rr + dy*k];
+            if (v === 1) p1c++; else if (v === 2) p2c++;
+          }
+          if (p1c > 0 && p2c > 0) continue;
+          if (p2c === 4) score += 1000;
+          else if (p2c === 3) score += 80;
+          else if (p2c === 2) score += 10;
+          if (p1c === 4) score -= 1200;
+          else if (p1c === 3) score -= 100;
+          else if (p1c === 2) score -= 12;
+        }
+      }
+    }
+    return score;
+  }
+
+  function endGame(result, winCells) {
+    gameOver = true;
+    thinking = false;
+    if (winCells) highlightWin(winCells);
+    if (result === 'you') {
+      msgEl.textContent = 'YOU WIN!';
+      msgEl.className = 'msg you';
+      wins++; localStorage.setItem('aliConnectWins', String(wins));
+      winsEl.textContent = wins;
+    } else if (result === 'cpu') {
+      msgEl.textContent = 'CPU WINS';
+      msgEl.className = 'msg cpu';
+      losses++; localStorage.setItem('aliConnectLosses', String(losses));
+      lossesEl.textContent = losses;
+    } else {
+      msgEl.textContent = 'DRAW';
+      msgEl.className = 'msg draw';
+    }
+  }
+
+  resetBtn.addEventListener('click', build);
+  diffSel.addEventListener('change', build);
+  build();
+})();
+</script>
+</body>
+</html>

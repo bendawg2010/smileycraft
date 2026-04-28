@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Sweep</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 30% 70%, rgba(0,255,255,0.06), transparent 40%),
+                           radial-gradient(circle at 70% 30%, rgba(255,0,110,0.06), transparent 40%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .board { display:grid; gap:2px; user-select:none; background:var(--panel);
+           padding:6px; border-radius:10px; border:2px solid var(--cyan);
+           box-shadow:0 0 30px rgba(0,255,255,0.2); }
+  .cell { width:34px; height:34px; background:#2a2a4a; border-radius:4px;
+          display:flex; align-items:center; justify-content:center;
+          font-family:'Russo One',sans-serif; font-size:0.95rem; color:#fff;
+          cursor:pointer; transition:transform 0.08s, background 0.08s; position:relative; }
+  .cell:hover { background:#3a3a6a; }
+  .cell.revealed { background:#14142a; cursor:default; }
+  .cell.revealed:hover { background:#14142a; }
+  .cell.flag::after { content:'⚑'; color:#FFD700; font-size:1rem; }
+  .cell.mine { background:#6e0030; }
+  .cell.mine::after { content:''; position:absolute; inset:4px; border-radius:50%;
+                      background:url('/ali.jpg') center/cover no-repeat;
+                      border:2px solid #FF006E; }
+  .cell.n1 { color:#00BFFF; }
+  .cell.n2 { color:#2ecc71; }
+  .cell.n3 { color:#e74c3c; }
+  .cell.n4 { color:#9b59b6; }
+  .cell.n5 { color:#e67e22; }
+  .cell.n6 { color:#1abc9c; }
+  .cell.n7 { color:#f1c40f; }
+  .cell.n8 { color:#ff1493; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 24px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .btn.secondary { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan); box-shadow:none; padding:10px; }
+  select.btn { padding-right:24px; }
+  .controls { margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+  .msg { font-family:'Russo One',sans-serif; font-size:1.2rem; margin-top:14px;
+         text-align:center; min-height:28px; }
+  .msg.win { color:#2ecc71; text-shadow:0 0 15px rgba(46,204,113,0.6); }
+  .msg.lose { color:#FF006E; text-shadow:0 0 15px rgba(255,0,110,0.6); }
+  label.flag-mode { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan);
+                    padding:8px 14px; border-radius:6px; font-family:'Russo One',sans-serif;
+                    font-size:0.85rem; cursor:pointer; }
+  label.flag-mode input { margin-right:6px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI SWEEP</h1>
+<div class="sub">Clear the board without clicking an Ali-mine.</div>
+<div class="hud">
+  <span>MINES: <b id="mines">0</b></span>
+  <span>FLAGS: <b id="flags">0</b></span>
+  <span>TIME: <b id="time">0s</b></span>
+</div>
+<div class="board" id="board"></div>
+<div class="msg" id="msg"></div>
+<div class="controls">
+  <button class="btn" id="reset">NEW GAME</button>
+  <select class="btn secondary" id="diff">
+    <option value="9,10">EASY (9×9, 10 mines)</option>
+    <option value="12,20" selected>MEDIUM (12×12, 20)</option>
+    <option value="16,40">HARD (16×16, 40)</option>
+  </select>
+  <label class="flag-mode"><input type="checkbox" id="flagMode">FLAG MODE</label>
+</div>
+<div class="tip">Click reveal &bull; Right-click or hold 0.3s / flag-mode to mark &bull; Numbers show adjacent mines</div>
+
+<script>
+(function(){
+  var board = document.getElementById('board');
+  var msg = document.getElementById('msg');
+  var diffSel = document.getElementById('diff');
+  var flagModeEl = document.getElementById('flagMode');
+
+  var SIZE = 12, MINES = 20;
+  var grid = []; // 2D array of cells: {mine, revealed, flagged, n, el}
+  var running = false, gameOver = false, won = false;
+  var startTime = 0, timerInterval = null, flagsPlaced = 0, revealedCount = 0;
+
+  function updateHUD() {
+    document.getElementById('mines').textContent = MINES;
+    document.getElementById('flags').textContent = flagsPlaced;
+  }
+
+  function startTimer() {
+    startTime = Date.now();
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(function(){
+      document.getElementById('time').textContent = Math.floor((Date.now() - startTime) / 1000) + 's';
+    }, 200);
+  }
+
+  function build() {
+    var parts = diffSel.value.split(',');
+    SIZE = parseInt(parts[0], 10);
+    MINES = parseInt(parts[1], 10);
+    board.style.gridTemplateColumns = 'repeat(' + SIZE + ', 1fr)';
+    while (board.firstChild) board.removeChild(board.firstChild);
+    grid = [];
+    for (var y = 0; y < SIZE; y++) {
+      grid[y] = [];
+      for (var x = 0; x < SIZE; x++) {
+        var cell = { mine: false, revealed: false, flagged: false, n: 0, x: x, y: y };
+        var el = document.createElement('div');
+        el.className = 'cell';
+        el.dataset.x = x;
+        el.dataset.y = y;
+        cell.el = el;
+        grid[y].push(cell);
+        board.appendChild(el);
+        bindCell(el, cell);
+      }
+    }
+    running = true; gameOver = false; won = false;
+    flagsPlaced = 0; revealedCount = 0;
+    msg.textContent = '';
+    msg.className = 'msg';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    document.getElementById('time').textContent = '0s';
+    startTime = 0;
+    updateHUD();
+    // Mines are placed on first click (safe first move)
+    firstClick = true;
+  }
+
+  var firstClick = true;
+
+  function placeMines(safeX, safeY) {
+    var placed = 0;
+    while (placed < MINES) {
+      var x = Math.floor(Math.random() * SIZE);
+      var y = Math.floor(Math.random() * SIZE);
+      if (Math.abs(x - safeX) <= 1 && Math.abs(y - safeY) <= 1) continue;
+      if (grid[y][x].mine) continue;
+      grid[y][x].mine = true;
+      placed++;
+    }
+    // Compute numbers
+    for (var yy = 0; yy < SIZE; yy++) {
+      for (var xx = 0; xx < SIZE; xx++) {
+        if (grid[yy][xx].mine) continue;
+        var n = 0;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            var nx = xx + dx, ny = yy + dy;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+            if (grid[ny][nx].mine) n++;
+          }
+        }
+        grid[yy][xx].n = n;
+      }
+    }
+  }
+
+  function bindCell(el, cell) {
+    var holdTimer = null;
+    el.addEventListener('contextmenu', function(e){
+      e.preventDefault();
+      toggleFlag(cell);
+    });
+    el.addEventListener('click', function(){
+      if (flagModeEl.checked) { toggleFlag(cell); return; }
+      reveal(cell);
+    });
+    el.addEventListener('touchstart', function(e){
+      holdTimer = setTimeout(function(){
+        toggleFlag(cell);
+        holdTimer = null;
+      }, 300);
+    }, {passive:true});
+    el.addEventListener('touchend', function(e){
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    }, {passive:true});
+    el.addEventListener('touchmove', function(){
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    }, {passive:true});
+  }
+
+  function toggleFlag(cell) {
+    if (!running || cell.revealed) return;
+    cell.flagged = !cell.flagged;
+    cell.el.classList.toggle('flag', cell.flagged);
+    flagsPlaced += cell.flagged ? 1 : -1;
+    updateHUD();
+  }
+
+  function reveal(cell) {
+    if (!running || cell.revealed || cell.flagged) return;
+    if (firstClick) {
+      placeMines(cell.x, cell.y);
+      firstClick = false;
+      startTimer();
+    }
+    if (cell.mine) {
+      cell.el.classList.add('revealed', 'mine');
+      // Reveal all mines
+      for (var y = 0; y < SIZE; y++) {
+        for (var x = 0; x < SIZE; x++) {
+          if (grid[y][x].mine && !grid[y][x].revealed) {
+            grid[y][x].revealed = true;
+            grid[y][x].el.classList.add('revealed', 'mine');
+          }
+        }
+      }
+      running = false;
+      gameOver = true;
+      msg.textContent = '💥 You hit an Ali-mine!';
+      msg.className = 'msg lose';
+      if (timerInterval) clearInterval(timerInterval);
+      return;
+    }
+    floodFill(cell);
+    checkWin();
+  }
+
+  function floodFill(cell) {
+    var stack = [cell];
+    while (stack.length) {
+      var c = stack.pop();
+      if (c.revealed || c.flagged) continue;
+      c.revealed = true;
+      revealedCount++;
+      c.el.classList.add('revealed');
+      if (c.n > 0) {
+        c.el.textContent = c.n;
+        c.el.classList.add('n' + c.n);
+      } else {
+        // Expand neighbors
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            var nx = c.x + dx, ny = c.y + dy;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+            stack.push(grid[ny][nx]);
+          }
+        }
+      }
+    }
+  }
+
+  function checkWin() {
+    if (revealedCount === SIZE * SIZE - MINES) {
+      running = false;
+      won = true;
+      var s = Math.floor((Date.now() - startTime) / 1000);
+      msg.textContent = '✨ CLEARED! ' + s + ' seconds.';
+      msg.className = 'msg win';
+      if (timerInterval) clearInterval(timerInterval);
+    }
+  }
+
+  document.getElementById('reset').addEventListener('click', build);
+  diffSel.addEventListener('change', build);
+  build();
+})();
+</script>
+</body>
+</html>

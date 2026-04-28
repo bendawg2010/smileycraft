@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Jump</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 0%, rgba(124,58,237,0.12), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  canvas { background:linear-gradient(180deg,#141428 0%,#0D0D1A 100%);
+           border:2px solid var(--purple); border-radius:10px;
+           box-shadow:0 0 30px rgba(124,58,237,0.3); max-width:100%; touch-action:none; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--purple),var(--pink));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(124,58,237,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:500px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI JUMP</h1>
+<div class="sub">Bounce up the platforms. Don't fall off the bottom.</div>
+<div class="hud">
+  <span>HEIGHT: <b id="height">0</b></span>
+  <span>BEST: <b id="best">0</b></span>
+</div>
+<canvas id="c" width="420" height="600"></canvas>
+<button class="btn" id="start">PLAY</button>
+<div class="tip">← → or A D to move &bull; Auto-bounce &bull; Tilt or tap left/right half on mobile</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var best = parseInt(localStorage.getItem('aliJumpBest') || '0', 10);
+  document.getElementById('best').textContent = best;
+
+  // ALL positions in WORLD coordinates. Y increases downward. camY = world y of top of screen.
+  // Screen y = world y - camY.
+  var GRAVITY = 1800;
+  var JUMP = 950;
+  var MOVE = 360;
+
+  var player = { x: W/2, y: 0, vx: 0, vy: 0, r: 20 };
+  var platforms = [];
+  var camY = 0;        // top of viewport in world coords (decreases as you go up)
+  var highestReached = 0;  // most negative y reached (highest)
+  var running = false, gameOver = false;
+  var keyLeft = false, keyRight = false;
+  var tilt = 0;
+
+  function spawnPlatform(y) {
+    var level = Math.floor(-highestReached / 600);
+    var moveChance = Math.min(0.05 + level * 0.04, 0.42);
+    var breakChance = Math.min(level * 0.03, 0.22);
+    var springChance = 0.06;
+    var r = Math.random();
+    var type = 'solid';
+    if (r < breakChance) type = 'break';
+    else if (r < breakChance + moveChance) type = 'move';
+    else if (r < breakChance + moveChance + springChance) type = 'spring';
+    var width = type === 'move' ? 64 : 76;
+    platforms.push({
+      x: Math.random() * (W - width),
+      y: y,
+      w: width,
+      h: 10,
+      type: type,
+      vx: type === 'move' ? ((Math.random() < 0.5 ? -1 : 1) * (60 + Math.random()*50 + level*12)) : 0,
+      alive: true
+    });
+  }
+
+  function initPlatforms() {
+    platforms = [];
+    // Big safe starting platform right under spawn
+    platforms.push({ x: W/2 - 60, y: H - 40, w: 120, h: 12, type: 'solid', vx: 0, alive: true });
+    // Scatter up to ~300 above spawn
+    var y = H - 100;
+    while (y > -400) {
+      spawnPlatform(y);
+      y -= 55 + Math.random() * 60;
+    }
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { keyLeft = true; e.preventDefault(); }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { keyRight = true; e.preventDefault(); }
+  });
+  document.addEventListener('keyup', function(e){
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keyLeft = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keyRight = false;
+  });
+
+  canvas.addEventListener('touchstart', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var x = e.touches[0].clientX - rect.left;
+    if (x < rect.width/2) { keyLeft = true; keyRight = false; }
+    else { keyRight = true; keyLeft = false; }
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchmove', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var x = e.touches[0].clientX - rect.left;
+    if (x < rect.width/2) { keyLeft = true; keyRight = false; }
+    else { keyRight = true; keyLeft = false; }
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchend', function(e){ keyLeft = false; keyRight = false; e.preventDefault(); }, {passive:false});
+
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', function(e){
+      if (e.gamma !== null) tilt = Math.max(-1, Math.min(1, e.gamma / 30));
+    });
+  }
+
+  function update(dt) {
+    // Horizontal
+    var dir = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
+    if (dir === 0 && Math.abs(tilt) > 0.12) dir = tilt;
+    player.vx = dir * MOVE;
+    player.x += player.vx * dt;
+    if (player.x < -player.r) player.x = W + player.r;
+    if (player.x > W + player.r) player.x = -player.r;
+
+    // Gravity
+    player.vy += GRAVITY * dt;
+    var newY = player.y + player.vy * dt;
+
+    // Collide with platforms (only while falling and only with top edge)
+    if (player.vy > 0) {
+      var pxLeft = player.x - player.r * 0.6;
+      var pxRight = player.x + player.r * 0.6;
+      var prevBottom = player.y + player.r;
+      var newBottom = newY + player.r;
+      for (var i = 0; i < platforms.length; i++) {
+        var p = platforms[i];
+        if (!p.alive) continue;
+        if (pxRight > p.x && pxLeft < p.x + p.w
+            && newBottom >= p.y && prevBottom <= p.y + 8) {
+          // Land!
+          if (p.type === 'spring') {
+            player.vy = -JUMP * 1.7;
+          } else {
+            player.vy = -JUMP;
+          }
+          newY = p.y - player.r - 0.1;
+          if (p.type === 'break') p.alive = false;
+          break;
+        }
+      }
+    }
+    player.y = newY;
+
+    // Track highest point reached
+    if (player.y < highestReached) highestReached = player.y;
+
+    // Camera follows player when they rise above the "follow line" (upper third)
+    var followLineScreenY = H * 0.4;
+    var playerScreenY = player.y - camY;
+    if (playerScreenY < followLineScreenY) {
+      camY = player.y - followLineScreenY;
+    }
+
+    // HUD height in "meters" — higher is bigger
+    document.getElementById('height').textContent = Math.max(0, Math.floor(-highestReached / 10));
+
+    // Move "move" platforms (pure world coords)
+    for (var j = 0; j < platforms.length; j++) {
+      var mp = platforms[j];
+      if (!mp.alive || mp.type !== 'move') continue;
+      mp.x += mp.vx * dt;
+      if (mp.x < 0) { mp.x = 0; mp.vx = Math.abs(mp.vx); }
+      if (mp.x + mp.w > W) { mp.x = W - mp.w; mp.vx = -Math.abs(mp.vx); }
+    }
+
+    // Cull platforms below the bottom of screen + buffer
+    platforms = platforms.filter(function(p){ return p.alive && p.y - camY < H + 150; });
+
+    // Spawn platforms above until the highest is above the top of the screen
+    var minY = Infinity;
+    for (var k = 0; k < platforms.length; k++) if (platforms[k].y < minY) minY = platforms[k].y;
+    if (minY === Infinity) minY = camY + H - 100;
+    while (minY > camY - 80) {
+      minY -= 45 + Math.random() * 60;
+      spawnPlatform(minY);
+    }
+
+    // Death: player falls off the bottom of the viewport
+    if (player.y - camY > H + 40) {
+      running = false;
+      gameOver = true;
+      var hScore = Math.floor(-highestReached / 10);
+      if (hScore > best) { best = hScore; localStorage.setItem('aliJumpBest', String(best)); }
+      document.getElementById('best').textContent = best;
+      document.getElementById('start').textContent = 'TRY AGAIN';
+    }
+  }
+
+  function drawPlatform(p) {
+    var sy = p.y - camY;
+    if (sy < -30 || sy > H + 20) return;
+    var col = '#00FFFF';
+    if (p.type === 'break') col = '#FF4444';
+    else if (p.type === 'move') col = '#FFD700';
+    else if (p.type === 'spring') col = '#FF006E';
+    ctx.save();
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 10;
+    var grad = ctx.createLinearGradient(p.x, sy, p.x, sy + p.h);
+    grad.addColorStop(0, col);
+    grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(p.x, sy, p.w, p.h);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(p.x, sy, p.w, p.h);
+    ctx.restore();
+    if (p.type === 'spring') {
+      ctx.fillStyle = '#fff';
+      ctx.font = "bold 9px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('SPRING', p.x + p.w/2, sy + 8);
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(124,58,237,0.08)';
+    ctx.lineWidth = 1;
+    for (var x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+
+    for (var i = 0; i < platforms.length; i++) drawPlatform(platforms[i]);
+
+    // Player
+    var psy = player.y - camY;
+    ctx.save();
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(player.x, psy, player.r, 0, Math.PI*2);
+    ctx.fillStyle = '#00FFFF';
+    ctx.fill();
+    ctx.restore();
+    if (aliImg.complete && aliImg.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(player.x, psy, player.r - 1, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, player.x - player.r, psy - player.r, player.r*2, player.r*2);
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(player.x, psy, player.r, 0, Math.PI*2);
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 18;
+      ctx.font = "bold 30px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 10);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.font = "bold 18px 'Russo One', sans-serif";
+      ctx.fillText('Height: ' + Math.floor(-highestReached/10), W/2, H/2 + 20);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    player.x = W/2;
+    player.y = H - 100;
+    player.vx = 0;
+    player.vy = -JUMP * 0.9;
+    camY = 0;
+    highestReached = player.y;
+    initPlatforms();
+    gameOver = false;
+    running = true;
+    document.getElementById('height').textContent = 0;
+  }
+
+  document.getElementById('start').addEventListener('click', startGame);
+  // Initial render for preview
+  player.y = H - 100;
+  initPlatforms();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

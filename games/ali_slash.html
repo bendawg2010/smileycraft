@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ALI SLASH</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a12; font-family: 'Russo One', sans-serif; color: #fff; user-select: none; -webkit-user-select: none; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; }
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#ui > * { pointer-events: auto; }
+.back-link { position: fixed; top: 12px; left: 16px; z-index: 20; font-size: .85rem; color: #0ff; text-decoration: none; font-family: 'Share Tech Mono', monospace; opacity: .7; transition: opacity .2s; }
+.back-link:hover { opacity: 1; }
+#hud { position: fixed; top: 0; left: 0; right: 0; display: none; padding: 12px 20px; justify-content: space-between; align-items: center; z-index: 15; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); }
+#hud .score { font-size: 1.6rem; text-shadow: 0 0 10px #0ff; }
+#hud .lives { font-size: 1.4rem; }
+#hud .combo { font-size: 1rem; color: #f0f; text-shadow: 0 0 8px #f0f; min-width: 120px; text-align: center; }
+#menu { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a12 70%); }
+#menu h1 { font-size: clamp(2.5rem, 8vw, 5rem); background: linear-gradient(135deg, #0ff, #f0f, #0ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: none; margin-bottom: 8px; animation: titlePulse 2s ease-in-out infinite; }
+@keyframes titlePulse { 0%, 100% { filter: brightness(1); transform: scale(1); } 50% { filter: brightness(1.3); transform: scale(1.05); } }
+#menu .subtitle { font-family: 'Share Tech Mono', monospace; color: #888; font-size: .9rem; margin-bottom: 32px; }
+#menu .ali-spin { width: 120px; height: 120px; border-radius: 50%; border: 3px solid #0ff; margin-bottom: 24px; animation: spin 4s linear infinite; object-fit: cover; box-shadow: 0 0 20px rgba(0,255,255,.3); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 3rem; background: #1a1a2e; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.mode-btn { display: block; width: 260px; padding: 14px; margin: 8px 0; border: 2px solid #0ff; background: rgba(0,255,255,.08); color: #0ff; font-family: 'Russo One', sans-serif; font-size: 1rem; cursor: pointer; border-radius: 8px; transition: all .2s; text-align: center; }
+.mode-btn:hover { background: rgba(0,255,255,.2); transform: scale(1.05); box-shadow: 0 0 20px rgba(0,255,255,.3); }
+.mode-btn small { display: block; font-family: 'Share Tech Mono', monospace; font-size: .65rem; color: #888; margin-top: 4px; }
+#gameover { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 25; background: rgba(0,0,0,.9); }
+#gameover h2 { font-size: clamp(2rem, 6vw, 3.5rem); color: #f44; margin-bottom: 8px; text-shadow: 0 0 20px #f44; }
+#gameover .final-score { font-size: clamp(1.5rem, 4vw, 2.5rem); color: #0ff; margin-bottom: 8px; }
+#gameover .best-combo { font-family: 'Share Tech Mono', monospace; color: #f0f; font-size: 1rem; margin-bottom: 8px; }
+#gameover .ali-msg { font-family: 'Share Tech Mono', monospace; color: #888; font-size: .85rem; max-width: 400px; text-align: center; margin-bottom: 8px; }
+#gameover .high-score { font-family: 'Share Tech Mono', monospace; color: #ff0; font-size: .85rem; margin-bottom: 20px; }
+#gameover .retry-btn { padding: 14px 48px; border: 2px solid #0ff; background: rgba(0,255,255,.1); color: #0ff; font-family: 'Russo One', sans-serif; font-size: 1.1rem; cursor: pointer; border-radius: 8px; transition: all .2s; }
+#gameover .retry-btn:hover { background: rgba(0,255,255,.25); transform: scale(1.05); }
+#combo-popup { position: fixed; top: 30%; left: 50%; transform: translate(-50%,-50%); z-index: 18; font-size: clamp(1.5rem, 5vw, 3rem); color: #f0f; text-shadow: 0 0 20px #f0f, 0 0 40px #f0f; opacity: 0; pointer-events: none; transition: none; white-space: nowrap; }
+#zen-timer { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); font-family: 'Share Tech Mono', monospace; font-size: 1.2rem; color: #ff0; display: none; z-index: 15; text-shadow: 0 0 8px #ff0; }
+</style>
+</head>
+<body>
+<a class="back-link" href="../index.html">&larr; Back to AliCraft</a>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div class="score" id="scoreDisplay">0</div>
+    <div class="combo" id="comboDisplay"></div>
+    <div class="lives" id="livesDisplay"></div>
+  </div>
+  <div id="zen-timer"></div>
+  <div id="combo-popup"></div>
+  <div id="menu">
+    <div class="ali-spin" id="aliSpinner"></div>
+    <h1>ALI SLASH</h1>
+    <div class="subtitle">Slice and dice that boy</div>
+    <button class="mode-btn" onclick="startGame('classic')">CLASSIC<small>3 lives - don't let items drop!</small></button>
+    <button class="mode-btn" onclick="startGame('zen')">ZEN MODE<small>90 seconds - no pressure (like Ali)</small></button>
+    <button class="mode-btn" onclick="startGame('ali')">ALI MODE<small>Slower items - more Ali faces</small></button>
+  </div>
+  <div id="gameover">
+    <h2>GAME OVER</h2>
+    <div class="final-score" id="finalScore"></div>
+    <div class="best-combo" id="bestCombo"></div>
+    <div class="ali-msg" id="aliMsg"></div>
+    <div class="high-score" id="highScore"></div>
+    <button class="retry-btn" onclick="showMenu()">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+// ── Ali face images — use the shared /ali.jpg ──
+const ALI_FACES = ['/ali.jpg'];
+let facesLoaded = true;
+(function(){
+  function init(){
+    var spinner = document.getElementById('aliSpinner');
+    if (!spinner) return;
+    var img = document.createElement('img');
+    img.src = '/ali.jpg';
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
+    spinner.textContent = '';
+    spinner.appendChild(img);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+// ── Canvas setup ──
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Game state ──
+let gameActive = false;
+let score = 0;
+let lives = 3;
+let mode = 'classic';
+let missedItems = 0;
+let bestComboThisGame = 0;
+let currentCombo = 0;
+let comboTimer = 0;
+let zenTimeLeft = 90;
+let zenInterval = null;
+let slowMo = false;
+let slowMoTimer = 0;
+let items = [];
+let particles = [];
+let slashTrail = [];
+let bgParticles = [];
+let aliFaceImgs = [];
+let lastSpawnTime = 0;
+let spawnInterval = 800;
+let isSlashing = false;
+let slashPoints = [];
+let gameOverShown = false;
+
+// ── Preload Ali face Image objects ──
+function preloadFaces() {
+  aliFaceImgs = [];
+  ALI_FACES.forEach(src => {
+    const img = new Image();
+    img.src = src;
+    aliFaceImgs.push(img);
+  });
+}
+
+// ── Item types ──
+const ITEM_TYPES = {
+  ali_face:    { emoji: null, color: '#ff4444', points: 10, radius: 40, isAli: true, slashable: true },
+  basketball:  { emoji: '\u{1F3C0}', color: '#ff8800', points: 5, radius: 30, slashable: true },
+  dumbbell:    { emoji: '\u{1F3CB}', color: '#888', points: 5, radius: 30, slashable: true },
+  shoe:        { emoji: '\u{1F45F}', color: '#44ff44', points: 5, radius: 28, slashable: true },
+  doctor_note: { emoji: '\u{1F4CB}', color: '#ffff00', points: 15, radius: 28, slashable: true, bonus: true },
+  protein:     { emoji: '\u{1F964}', color: '#88ff88', points: 5, radius: 28, slashable: true },
+  couch:       { emoji: '\u{1F6CB}', color: '#8B4513', points: 0, radius: 35, slashable: false, penalty: true, msg: "You destroyed Ali's only friend!" },
+  pizza:       { emoji: '\u{1F355}', color: '#ffaa00', points: 0, radius: 28, slashable: false, penalty: true, msg: "Ali needs that to survive!" },
+  remote:      { emoji: '\u{1F4FA}', color: '#666', points: 0, radius: 26, slashable: false, penalty: true, msg: "That was Ali's life support!" },
+};
+
+const SLASH_TYPES = ['ali_face', 'basketball', 'dumbbell', 'shoe', 'doctor_note', 'protein'];
+const PENALTY_TYPES = ['couch', 'pizza', 'remote'];
+
+function getSpawnWeights() {
+  const w = {};
+  if (mode === 'ali') {
+    w.ali_face = 40; w.basketball = 10; w.dumbbell = 10; w.shoe = 8; w.doctor_note = 6; w.protein = 8;
+    w.couch = 7; w.pizza = 6; w.remote = 5;
+  } else {
+    w.ali_face = 25; w.basketball = 14; w.dumbbell = 12; w.shoe = 10; w.doctor_note = 5; w.protein = 10;
+    w.couch = 9; w.pizza = 8; w.remote = 7;
+  }
+  return w;
+}
+
+function pickItemType() {
+  const w = getSpawnWeights();
+  const total = Object.values(w).reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (const [type, weight] of Object.entries(w)) {
+    r -= weight;
+    if (r <= 0) return type;
+  }
+  return 'ali_face';
+}
+
+// ── Background particles ──
+function initBgParticles() {
+  bgParticles = [];
+  for (let i = 0; i < 50; i++) {
+    bgParticles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - .5) * .3, vy: (Math.random() - .5) * .3,
+      r: Math.random() * 2 + .5, alpha: Math.random() * .3 + .05
+    });
+  }
+}
+
+// ── Item class ──
+function spawnItem() {
+  const type = pickItemType();
+  const def = ITEM_TYPES[type];
+  const x = Math.random() * (W - 120) + 60;
+  const speedMult = mode === 'ali' ? 0.65 : 1;
+  const vy = -(H * 0.018 + Math.random() * H * 0.008) * speedMult;
+  const vx = (Math.random() - .5) * 4 * speedMult;
+  const sizeVariation = type === 'ali_face' ? (0.8 + Math.random() * 0.6) : 1;
+  const item = {
+    type, x, y: H + 40,
+    vx, vy,
+    gravity: 0.35 * (mode === 'ali' ? 0.65 : 1),
+    radius: def.radius * sizeVariation,
+    rotation: 0,
+    rotSpeed: (Math.random() - .5) * 0.12,
+    alive: true,
+    slashed: false,
+    halfL: null, halfR: null,
+    fadeTimer: 0,
+    faceIdx: type === 'ali_face' && aliFaceImgs.length > 0 ? Math.floor(Math.random() * aliFaceImgs.length) : -1,
+  };
+  items.push(item);
+}
+
+// ── Slash detection ──
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function checkSlash(p1, p2) {
+  let hitCount = 0;
+  let hitAliCount = 0;
+  const hitItems = [];
+  items.forEach(item => {
+    if (!item.alive || item.slashed) return;
+    const d = distToSegment(item.x, item.y, p1.x, p1.y, p2.x, p2.y);
+    if (d < item.radius + 10) {
+      hitItems.push(item);
+    }
+  });
+  hitItems.forEach(item => {
+    const def = ITEM_TYPES[item.type];
+    item.slashed = true;
+    item.alive = false;
+    if (def.slashable) {
+      hitCount++;
+      if (item.type === 'ali_face') hitAliCount++;
+      // Spawn particles
+      spawnSlashParticles(item.x, item.y, def.color, item.type === 'ali_face' ? 20 : 12);
+      // Halves effect for Ali face
+      if (item.type === 'ali_face') {
+        spawnHalves(item);
+      }
+      if (def.bonus) {
+        showFloatingText(item.x, item.y - 30, "Ali's excuse destroyed!", '#ffff00');
+      }
+    } else if (def.penalty) {
+      if (mode !== 'zen') {
+        lives--;
+        updateHUD();
+        showFloatingText(item.x, item.y - 30, def.msg, '#ff4444');
+        spawnSlashParticles(item.x, item.y, '#ff0000', 8);
+        if (lives <= 1 && lives > 0) {
+          slowMo = true;
+          slowMoTimer = 120;
+        }
+        if (lives <= 0) endGame();
+      }
+    }
+  });
+  if (hitCount > 0) {
+    currentCombo += hitCount;
+    comboTimer = 30;
+    let pts = 0;
+    hitItems.forEach(it => { if (ITEM_TYPES[it.type].slashable) pts += ITEM_TYPES[it.type].points; });
+    // Combo multiplier for 3+
+    if (currentCombo >= 3) {
+      const mult = Math.min(currentCombo, 8);
+      pts = Math.floor(pts * (1 + (mult - 1) * 0.3));
+      showComboPopup('COMBO x' + currentCombo + '!', '#f0f');
+    }
+    // Ali combo bonus
+    if (hitAliCount >= 3) {
+      pts += 50;
+      showComboPopup('ALI COMBO! +50', '#ff0');
+    }
+    score += pts;
+    if (currentCombo > bestComboThisGame) bestComboThisGame = currentCombo;
+    updateHUD();
+  }
+}
+
+function spawnSlashParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 5;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      r: 2 + Math.random() * 4,
+      color,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      gravity: 0.15,
+    });
+  }
+}
+
+function spawnHalves(item) {
+  // Two halves flying apart
+  for (let side = -1; side <= 1; side += 2) {
+    particles.push({
+      x: item.x, y: item.y,
+      vx: side * (3 + Math.random() * 2),
+      vy: -2 - Math.random() * 3,
+      r: item.radius,
+      color: '#ff4444',
+      life: 1,
+      decay: 0.008,
+      gravity: 0.25,
+      isHalf: true,
+      side,
+      faceIdx: item.faceIdx,
+      rotation: item.rotation,
+    });
+  }
+}
+
+// ── Floating text ──
+const floatingTexts = [];
+function showFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 1, vy: -1.5 });
+}
+
+function showComboPopup(text, color) {
+  const el = document.getElementById('combo-popup');
+  el.textContent = text;
+  el.style.color = color;
+  el.style.textShadow = '0 0 20px ' + color + ', 0 0 40px ' + color;
+  el.style.opacity = '1';
+  el.style.transform = 'translate(-50%,-50%) scale(1.2)';
+  setTimeout(() => {
+    el.style.transition = 'opacity .5s, transform .5s';
+    el.style.opacity = '0';
+    el.style.transform = 'translate(-50%,-50%) scale(0.8)';
+    setTimeout(() => { el.style.transition = 'none'; }, 500);
+  }, 600);
+}
+
+// ── HUD ──
+function updateHUD() {
+  document.getElementById('scoreDisplay').textContent = score;
+  if (mode !== 'zen') {
+    let hearts = '';
+    for (let i = 0; i < 3; i++) hearts += i < lives ? '\u2764\uFE0F' : '\u{1F5A4}';
+    document.getElementById('livesDisplay').textContent = hearts;
+  } else {
+    document.getElementById('livesDisplay').textContent = '';
+  }
+  if (currentCombo >= 2) {
+    const el = document.getElementById('comboDisplay');
+    el.textContent = 'x' + currentCombo;
+    el.style.transform = 'scale(1.3)';
+    setTimeout(() => el.style.transform = 'scale(1)', 100);
+  }
+}
+
+// ── Input handling ──
+function getPos(e) {
+  if (e.touches) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
+canvas.addEventListener('mousedown', e => { if (!gameActive) return; isSlashing = true; slashPoints = [getPos(e)]; slashTrail = [{ ...getPos(e), time: Date.now() }]; });
+canvas.addEventListener('mousemove', e => {
+  if (!gameActive || !isSlashing) return;
+  const p = getPos(e);
+  if (slashPoints.length > 0) checkSlash(slashPoints[slashPoints.length - 1], p);
+  slashPoints.push(p);
+  slashTrail.push({ ...p, time: Date.now() });
+});
+canvas.addEventListener('mouseup', () => { isSlashing = false; currentCombo = 0; document.getElementById('comboDisplay').textContent = ''; });
+canvas.addEventListener('mouseleave', () => { isSlashing = false; currentCombo = 0; });
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); if (!gameActive) return; isSlashing = true; const p = getPos(e); slashPoints = [p]; slashTrail = [{ ...p, time: Date.now() }]; }, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!gameActive || !isSlashing) return;
+  const p = getPos(e);
+  if (slashPoints.length > 0) checkSlash(slashPoints[slashPoints.length - 1], p);
+  slashPoints.push(p);
+  slashTrail.push({ ...p, time: Date.now() });
+}, { passive: false });
+canvas.addEventListener('touchend', e => { e.preventDefault(); isSlashing = false; currentCombo = 0; document.getElementById('comboDisplay').textContent = ''; }, { passive: false });
+
+// ── Drawing ──
+function drawItem(item) {
+  const def = ITEM_TYPES[item.type];
+  ctx.save();
+  ctx.translate(item.x, item.y);
+  ctx.rotate(item.rotation);
+
+  if (item.type === 'ali_face' && item.faceIdx >= 0 && aliFaceImgs[item.faceIdx] && aliFaceImgs[item.faceIdx].complete) {
+    // Draw Ali face in circle
+    ctx.beginPath();
+    ctx.arc(0, 0, item.radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.save();
+    ctx.clip();
+    ctx.drawImage(aliFaceImgs[item.faceIdx], -item.radius, -item.radius, item.radius * 2, item.radius * 2);
+    ctx.restore();
+    // Glow
+    ctx.strokeStyle = 'rgba(255,68,68,.4)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else if (item.type === 'ali_face') {
+    // Fallback: drawn face
+    ctx.beginPath();
+    ctx.arc(0, 0, item.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffcc88';
+    ctx.fill();
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = '#333';
+    ctx.font = (item.radius * 0.6) + 'px Russo One';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ALI', 0, 0);
+  } else {
+    // Emoji items
+    ctx.font = (item.radius * 1.5) + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.emoji, 0, 0);
+    // Subtle glow for bonus items
+    if (def.bonus) {
+      ctx.shadowColor = '#ffff00';
+      ctx.shadowBlur = 15;
+      ctx.fillText(def.emoji, 0, 0);
+      ctx.shadowBlur = 0;
+    }
+  }
+  ctx.restore();
+}
+
+function drawSlashTrail() {
+  const now = Date.now();
+  slashTrail = slashTrail.filter(p => now - p.time < 150);
+  if (slashTrail.length < 2) return;
+  for (let i = 1; i < slashTrail.length; i++) {
+    const age = (now - slashTrail[i].time) / 150;
+    const alpha = 1 - age;
+    const width = (1 - age) * 6 + 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = `hsl(${180 + age * 120}, 100%, 60%)`;
+    ctx.lineWidth = width;
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 15;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(slashTrail[i - 1].x, slashTrail[i - 1].y);
+    ctx.lineTo(slashTrail[i].x, slashTrail[i].y);
+    ctx.stroke();
+    // Inner bright line
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = width * 0.3;
+    ctx.shadowBlur = 0;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    if (p.isHalf && p.faceIdx >= 0 && aliFaceImgs[p.faceIdx] && aliFaceImgs[p.faceIdx].complete) {
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation + p.side * 0.3);
+      ctx.beginPath();
+      if (p.side === -1) ctx.rect(-p.r, -p.r, p.r, p.r * 2);
+      else ctx.rect(0, -p.r, p.r, p.r * 2);
+      ctx.clip();
+      ctx.drawImage(aliFaceImgs[p.faceIdx], -p.r, -p.r, p.r * 2, p.r * 2);
+    } else if (p.isHalf) {
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation + p.side * 0.3);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      if (p.side === -1) ctx.arc(0, 0, p.r, Math.PI * 0.5, Math.PI * 1.5);
+      else ctx.arc(0, 0, p.r, -Math.PI * 0.5, Math.PI * 0.5);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+function drawBg() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+  // BG particles
+  bgParticles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.fillStyle = `rgba(0,255,255,${p.alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawFloatingTexts() {
+  floatingTexts.forEach(ft => {
+    ctx.save();
+    ctx.globalAlpha = ft.life;
+    ctx.font = 'bold 16px "Share Tech Mono", monospace';
+    ctx.fillStyle = ft.color;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = ft.color;
+    ctx.shadowBlur = 8;
+    ctx.fillText(ft.text, ft.x, ft.y);
+    ctx.restore();
+  });
+}
+
+// ── Update ──
+function update() {
+  const dt = slowMo ? 0.4 : 1;
+
+  if (slowMoTimer > 0) {
+    slowMoTimer -= 1;
+    if (slowMoTimer <= 0) slowMo = false;
+  }
+
+  // Combo decay
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+  } else if (!isSlashing && currentCombo > 0) {
+    currentCombo = 0;
+    document.getElementById('comboDisplay').textContent = '';
+  }
+
+  // Spawn items
+  const now = performance.now();
+  const si = mode === 'ali' ? spawnInterval * 1.2 : spawnInterval;
+  if (now - lastSpawnTime > si) {
+    // Sometimes spawn 2-3 at once
+    const count = Math.random() < 0.3 ? (Math.random() < 0.3 ? 3 : 2) : 1;
+    for (let i = 0; i < count; i++) spawnItem();
+    lastSpawnTime = now;
+    // Gradually increase difficulty
+    if (spawnInterval > 400) spawnInterval -= 2;
+  }
+
+  // Update items
+  items.forEach(item => {
+    if (!item.alive) return;
+    item.x += item.vx * dt;
+    item.y += item.vy * dt;
+    item.vy += item.gravity * dt;
+    item.rotation += item.rotSpeed * dt;
+
+    // Check if item fell off screen
+    if (item.y > H + 60 && !item.slashed) {
+      item.alive = false;
+      const def = ITEM_TYPES[item.type];
+      if (def.slashable && mode === 'classic') {
+        missedItems++;
+        if (missedItems >= 3) {
+          missedItems = 0;
+          lives--;
+          showFloatingText(item.x, H - 40, 'MISSED!', '#ff4444');
+          updateHUD();
+          if (lives <= 1 && lives > 0) { slowMo = true; slowMoTimer = 120; }
+          if (lives <= 0) endGame();
+        }
+      }
+    }
+  });
+
+  // Clean dead items
+  items = items.filter(i => i.alive || i.y < H + 100);
+
+  // Update particles
+  particles.forEach(p => {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += (p.gravity || 0.15) * dt;
+    p.life -= p.decay * dt;
+    if (p.isHalf) p.rotation = (p.rotation || 0) + 0.05 * p.side * dt;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  // Update floating texts
+  floatingTexts.forEach(ft => {
+    ft.y += ft.vy;
+    ft.life -= 0.015;
+  });
+  floatingTexts.length = floatingTexts.filter(ft => ft.life > 0).length || (floatingTexts.length = 0, 0);
+  // Proper filter
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    if (floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
+  }
+}
+
+// ── Render loop ──
+function render() {
+  drawBg();
+  items.forEach(item => { if (item.alive) drawItem(item); });
+  drawParticles();
+  drawSlashTrail();
+  drawFloatingTexts();
+
+  // Slow-mo vignette
+  if (slowMo) {
+    ctx.save();
+    const grad = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.7);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(255,0,0,0.2)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
+function gameLoop() {
+  if (!gameActive) return;
+  update();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ── Game flow ──
+window.startGame = function(m) {
+  mode = m;
+  score = 0;
+  lives = 3;
+  missedItems = 0;
+  bestComboThisGame = 0;
+  currentCombo = 0;
+  comboTimer = 0;
+  items = [];
+  particles = [];
+  slashTrail = [];
+  floatingTexts.length = 0;
+  spawnInterval = 800;
+  slowMo = false;
+  slowMoTimer = 0;
+  gameActive = true;
+  gameOverShown = false;
+  lastSpawnTime = performance.now();
+
+  preloadFaces();
+  initBgParticles();
+
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('gameover').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+
+  updateHUD();
+
+  if (mode === 'zen') {
+    zenTimeLeft = 90;
+    const timerEl = document.getElementById('zen-timer');
+    timerEl.style.display = 'block';
+    timerEl.textContent = '90s';
+    zenInterval = setInterval(() => {
+      zenTimeLeft--;
+      timerEl.textContent = zenTimeLeft + 's';
+      if (zenTimeLeft <= 0) {
+        clearInterval(zenInterval);
+        endGame();
+      }
+    }, 1000);
+  } else {
+    document.getElementById('zen-timer').style.display = 'none';
+  }
+
+  gameLoop();
+};
+
+function endGame() {
+  if (gameOverShown) return;
+  gameOverShown = true;
+  gameActive = false;
+  if (zenInterval) { clearInterval(zenInterval); zenInterval = null; }
+  document.getElementById('zen-timer').style.display = 'none';
+
+  // Save high score
+  const key = 'aliSlash_high_' + mode;
+  const prev = parseInt(localStorage.getItem(key) || '0');
+  const isNew = score > prev;
+  if (isNew) localStorage.setItem(key, score);
+
+  // Ali messages
+  const msgs = [
+    "Ali could never score this high... at anything.",
+    "You slashed more than Ali's GPA!",
+    "More cuts than Ali's barber gives him... and that's saying something.",
+    "Ali wishes he moved this fast. In his dreams.",
+    "This is what peak performance looks like. Ali wouldn't know.",
+    "Somewhere, Ali just felt a disturbance in the couch cushions.",
+    "You destroyed more things than Ali's basketball career.",
+    "Ali's 23 min/mile couldn't outrun your blade!",
+    score > 200 ? "LEGENDARY! Ali just shed a protein shake tear." : "Not bad, but Ali still scored lower... at life.",
+    score < 30 ? "Even Ali could've done better. EVEN ALI." : "Ali's doctor notes couldn't save him from this.",
+  ];
+
+  document.getElementById('finalScore').textContent = 'Score: ' + score;
+  document.getElementById('bestCombo').textContent = 'Best Combo: x' + bestComboThisGame;
+  document.getElementById('aliMsg').textContent = msgs[Math.floor(Math.random() * msgs.length)];
+  document.getElementById('highScore').textContent = isNew ? 'NEW HIGH SCORE!' : 'High Score: ' + Math.max(prev, score);
+  document.getElementById('gameover').style.display = 'flex';
+  document.getElementById('hud').style.display = 'none';
+
+  // Draw final frame
+  render();
+}
+
+window.showMenu = function() {
+  gameActive = false;
+  if (zenInterval) { clearInterval(zenInterval); zenInterval = null; }
+  document.getElementById('gameover').style.display = 'none';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('menu').style.display = 'flex';
+  // Keep animating bg
+  initBgParticles();
+  (function menuBg() {
+    if (gameActive) return;
+    drawBg();
+    requestAnimationFrame(menuBg);
+  })();
+};
+
+// ── Init ──
+initBgParticles();
+(function menuBg() {
+  if (gameActive) return;
+  drawBg();
+  requestAnimationFrame(menuBg);
+})();
+
+})();
+</script>
+</body>
+</html>

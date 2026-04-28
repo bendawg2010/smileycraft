@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALI SNAKE</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0D0D1A;color:#e0e0e0;font-family:'Chakra Petch',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
+a.back{position:fixed;top:18px;left:18px;color:#00e5ff;text-decoration:none;font-size:14px;font-family:'Chakra Petch',sans-serif;z-index:100;opacity:.7;transition:opacity .2s}
+a.back:hover{opacity:1}
+#gameWrap{position:relative;display:flex;flex-direction:column;align-items:center}
+canvas{border:2px solid #1a1a2e;border-radius:6px;display:block;image-rendering:pixelated}
+#hud{display:flex;gap:30px;margin-bottom:10px;font-family:'Chakra Petch',sans-serif;font-size:15px;color:#b0b0c0}
+#hud span{color:#00e5ff;font-weight:700}
+#statusMsg{margin-top:8px;font-size:13px;color:#ff6ec7;min-height:18px;text-align:center;font-style:italic}
+
+/* Overlay screens */
+.overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,13,26,.92);border-radius:6px;z-index:10;text-align:center;padding:20px}
+.overlay h1{font-family:'Russo One',sans-serif;font-size:42px;background:linear-gradient(90deg,#00e5ff,#ff6ec7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px}
+.overlay .sub{color:#888;font-size:14px;margin-bottom:20px}
+.overlay .controls{color:#666;font-size:12px;margin-bottom:18px;line-height:1.8}
+.overlay .controls kbd{background:#1a1a2e;color:#00e5ff;padding:2px 8px;border-radius:4px;font-family:'Chakra Petch',sans-serif;font-size:11px}
+.overlay .hs{color:#ff6ec7;font-size:16px;margin-bottom:20px}
+.overlay button{background:linear-gradient(135deg,#00e5ff,#ff6ec7);color:#0D0D1A;border:none;padding:12px 36px;font-family:'Russo One',sans-serif;font-size:18px;border-radius:8px;cursor:pointer;transition:transform .15s}
+.overlay button:hover{transform:scale(1.05)}
+.overlay .death-msg{color:#ff4444;font-size:15px;margin-bottom:6px}
+.overlay .score-line{color:#00e5ff;font-size:20px;margin:8px 0}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<a class="back" href="../index.html">&larr; Back to AliCraft</a>
+
+<div id="gameWrap">
+  <div id="hud">
+    Score: <span id="scoreVal">0</span> &nbsp;|&nbsp; Length: <span id="lenVal">3</span>
+  </div>
+  <canvas id="c"></canvas>
+  <div id="statusMsg"></div>
+
+  <!-- Start Screen -->
+  <div class="overlay" id="startScreen">
+    <h1>ALI SNAKE</h1>
+    <div class="sub">Ali tries to eat healthy... keyword: tries</div>
+    <div class="controls">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd> to move<br>
+      Eat gym food to grow &nbsp;|&nbsp; Junk food = speed boost<br>
+      <span style="color:#ffd700">Doctor's Note</span> = shrink powerup<br>
+      Ali trips every 30 seconds... good luck
+    </div>
+    <div class="hs">High Score: <span id="hsStart">0</span></div>
+    <button id="btnStart">PLAY</button>
+  </div>
+
+  <!-- Death Screen -->
+  <div class="overlay hidden" id="deathScreen">
+    <h1>WASTED</h1>
+    <div class="death-msg" id="deathMsg"></div>
+    <div class="score-line">Score: <span id="finalScore">0</span></div>
+    <div class="hs">High Score: <span id="hsDeath">0</span></div>
+    <button id="btnRetry">TRY AGAIN</button>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ───
+const GRID = 20;
+const BASE_SPEED = 170; // ms per tick (slow Ali)
+const MIN_SPEED = 80;
+const TRIP_INTERVAL = 30000;
+const JUNK_BOOST_DUR = 3000;
+const JUNK_BOOST_SPEED = 90;
+
+// ─── CANVAS SETUP ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let CELL, W, H;
+
+function resize() {
+  const maxW = Math.min(window.innerWidth - 40, 600);
+  const maxH = Math.min(window.innerHeight - 140, 600);
+  const dim = Math.min(maxW, maxH);
+  CELL = Math.floor(dim / GRID);
+  W = CELL * GRID;
+  H = CELL * GRID;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (!running) drawGrid(); });
+
+// ─── ALI FACE (drawn to offscreen canvas) ───
+// Real Ali photo loaded once, shared across all face canvases
+const aliPhoto = new Image();
+let aliPhotoReady = false;
+const _faceCanvases = [];
+aliPhoto.onload = function() {
+  aliPhotoReady = true;
+  // Re-render any cached canvases
+  _faceCanvases.forEach(function(item) { _renderAliFace(item.canvas, item.size); });
+};
+aliPhoto.src = '/ali.jpg';
+
+function _renderAliFace(oc, size) {
+  const g = oc.getContext('2d');
+  g.clearRect(0, 0, size, size);
+  g.save();
+  g.beginPath();
+  g.arc(size/2, size/2, size/2 - 1, 0, Math.PI*2);
+  g.clip();
+  if (aliPhotoReady) {
+    g.drawImage(aliPhoto, 0, 0, size, size);
+  } else {
+    g.fillStyle = '#d4a76a';
+    g.fillRect(0, 0, size, size);
+  }
+  g.restore();
+  // Neon ring
+  g.beginPath();
+  g.arc(size/2, size/2, size/2 - 1, 0, Math.PI*2);
+  g.strokeStyle = '#00FFFF';
+  g.lineWidth = Math.max(1, size/18);
+  g.stroke();
+}
+
+function makeAliFace(size) {
+  const oc = document.createElement('canvas');
+  oc.width = size; oc.height = size;
+  _faceCanvases.push({ canvas: oc, size: size });
+  _renderAliFace(oc, size);
+  return oc;
+}
+
+let aliFaceHead, aliFaceBody;
+function buildFaces() {
+  aliFaceHead = makeAliFace(CELL);
+  aliFaceBody = makeAliFace(Math.floor(CELL * 0.75));
+}
+buildFaces();
+
+// ─── FOOD DEFINITIONS ───
+const GOOD_FOODS = [
+  { emoji: '\uD83C\uDFCB', name: 'Dumbbell' },
+  { emoji: '\uD83C\uDFC0', name: 'Basketball' },
+  { emoji: '\uD83D\uDC5F', name: 'Running Shoe' },
+  { emoji: '\uD83E\uDD64', name: 'Protein Shake' },
+];
+const BAD_FOODS = [
+  { emoji: '\uD83C\uDF55', name: 'Pizza' },
+  { emoji: '\uD83C\uDF5F', name: 'Fries' },
+  { emoji: '\uD83D\uDECB', name: 'Couch' },
+];
+const SPECIAL = { emoji: '\uD83D\uDCDD', name: "Doctor's Note" };
+
+// ─── STATE ───
+let snake, dir, nextDir, food, foodType, score, highScore, running, gameLoop;
+let tripTimer, junkTimer, junkBoosted, statusTimeout;
+let tickSpeed;
+let trailParticles = [];
+
+highScore = parseInt(localStorage.getItem('aliSnakeHS') || '0');
+document.getElementById('hsStart').textContent = highScore;
+
+const statusMsgs = [
+  "Ali's already out of breath",
+  "This counts as Ali's workout for the year",
+  "Ali googled 'how to be athletic'",
+  "Coordination level: newborn giraffe",
+  "Ali tripped over nothing",
+  "Ali asked for a water break",
+  "PE was Ali's worst nightmare",
+  "Ali thought WASD was a word",
+  "That protein shake is just chocolate milk",
+  "Ali's FitBit filed a missing persons report",
+];
+const deathMsgs = [
+  "Ali ran into himself (coordination: 0)",
+  "Ali's spatial awareness needs a doctor's note too",
+  "Ali tried to dodge himself and failed",
+  "Even the snake couldn't handle Ali's athleticism",
+  "Ali's reaction time: currently buffering",
+  "Ali hit a wall... surprising absolutely no one",
+];
+
+// ─── FUNCTIONS ───
+function drawGrid() {
+  ctx.fillStyle = '#0D0D1A';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= W; x += CELL) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += CELL) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+}
+
+function randCell() {
+  return { x: Math.floor(Math.random()*GRID), y: Math.floor(Math.random()*GRID) };
+}
+
+function spawnFood() {
+  let pos;
+  do { pos = randCell(); } while (snake.some(s => s.x===pos.x && s.y===pos.y));
+
+  const r = Math.random();
+  if (r < 0.05 && snake.length > 5) {
+    // Special: Doctor's Note
+    food = pos;
+    foodType = { ...SPECIAL, type: 'special' };
+  } else if (r < 0.3) {
+    food = pos;
+    foodType = { ...BAD_FOODS[Math.floor(Math.random()*BAD_FOODS.length)], type: 'bad' };
+  } else {
+    food = pos;
+    foodType = { ...GOOD_FOODS[Math.floor(Math.random()*GOOD_FOODS.length)], type: 'good' };
+  }
+}
+
+function showStatus(msg) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  clearTimeout(statusTimeout);
+  statusTimeout = setTimeout(() => el.textContent = '', 3000);
+}
+
+function trip() {
+  if (!running) return;
+  const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+  // Pick random direction that isn't reverse
+  let d;
+  do { d = dirs[Math.floor(Math.random()*dirs.length)]; } while (d.x === -dir.x && d.y === -dir.y);
+  dir = d;
+  nextDir = d;
+  showStatus(statusMsgs[Math.floor(Math.random()*statusMsgs.length)]);
+  tripTimer = setTimeout(trip, TRIP_INTERVAL);
+}
+
+function startGame() {
+  resize();
+  buildFaces();
+  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  dir = {x:1,y:0};
+  nextDir = {x:1,y:0};
+  score = 0;
+  tickSpeed = BASE_SPEED;
+  junkBoosted = false;
+  trailParticles = [];
+  running = true;
+
+  document.getElementById('scoreVal').textContent = 0;
+  document.getElementById('lenVal').textContent = 3;
+  document.getElementById('statusMsg').textContent = '';
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('deathScreen').classList.add('hidden');
+
+  spawnFood();
+  clearTimeout(tripTimer);
+  clearTimeout(junkTimer);
+  tripTimer = setTimeout(trip, TRIP_INTERVAL);
+
+  clearInterval(gameLoop);
+  scheduleLoop();
+}
+
+function scheduleLoop() {
+  clearInterval(gameLoop);
+  gameLoop = setInterval(tick, junkBoosted ? JUNK_BOOST_SPEED : tickSpeed);
+}
+
+function die() {
+  running = false;
+  clearInterval(gameLoop);
+  clearTimeout(tripTimer);
+  clearTimeout(junkTimer);
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('aliSnakeHS', highScore);
+  }
+
+  document.getElementById('deathMsg').textContent = deathMsgs[Math.floor(Math.random()*deathMsgs.length)];
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('hsDeath').textContent = highScore;
+  document.getElementById('deathScreen').classList.remove('hidden');
+}
+
+function tick() {
+  dir = nextDir;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  // Wall collision
+  if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) { die(); return; }
+  // Self collision
+  if (snake.some(s => s.x === head.x && s.y === head.y)) { die(); return; }
+
+  snake.unshift(head);
+
+  // Trail particle
+  trailParticles.push({ x: head.x, y: head.y, life: 8, color: junkBoosted ? '#ff6ec7' : '#00e5ff' });
+
+  let ate = false;
+  if (head.x === food.x && head.y === food.y) {
+    ate = true;
+    score += foodType.type === 'good' ? 10 : (foodType.type === 'bad' ? 5 : 0);
+
+    if (foodType.type === 'bad') {
+      // Junk food speed boost
+      junkBoosted = true;
+      clearTimeout(junkTimer);
+      junkTimer = setTimeout(() => {
+        junkBoosted = false;
+        scheduleLoop();
+        showStatus("Ali crashed from the sugar rush");
+      }, JUNK_BOOST_DUR);
+      scheduleLoop();
+      showStatus("Ali found " + foodType.emoji + " " + foodType.name + "! TURBO MODE!");
+    } else if (foodType.type === 'special') {
+      // Doctor's Note: shrink
+      const remove = Math.min(3, snake.length - 3);
+      for (let i = 0; i < remove; i++) snake.pop();
+      showStatus("\uD83D\uDCDD Doctor's Note! Ali got out of gym class!");
+    } else {
+      showStatus("Ali reluctantly picked up " + foodType.emoji + " " + foodType.name);
+    }
+
+    // Speed curve: get faster, then "tire out"
+    if (foodType.type === 'good') {
+      tickSpeed = Math.max(MIN_SPEED, tickSpeed - 3);
+      // Every 50 points, Ali gets tired
+      if (score % 50 === 0 && score > 0) {
+        tickSpeed = Math.min(tickSpeed + 20, BASE_SPEED);
+        showStatus("Ali needs a breather... *wheeze*");
+      }
+    }
+    if (!junkBoosted) scheduleLoop();
+
+    document.getElementById('scoreVal').textContent = score;
+    document.getElementById('lenVal').textContent = snake.length;
+    spawnFood();
+  }
+
+  if (!ate) snake.pop();
+
+  // Age particles
+  trailParticles = trailParticles.filter(p => { p.life--; return p.life > 0; });
+
+  draw();
+}
+
+function draw() {
+  drawGrid();
+
+  // Draw trail particles
+  for (const p of trailParticles) {
+    const alpha = p.life / 8 * 0.3;
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(p.x * CELL + CELL*0.2, p.y * CELL + CELL*0.2, CELL*0.6, CELL*0.6);
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw border glow (gym equipment wall)
+  ctx.strokeStyle = '#2a1a3e';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1, 1, W-2, H-2);
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 1;
+
+  // Draw food
+  const foodSize = CELL * 0.85;
+  ctx.font = foodSize + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Food glow
+  if (foodType.type === 'special') {
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 12;
+  } else if (foodType.type === 'bad') {
+    ctx.shadowColor = '#ff6ec7';
+    ctx.shadowBlur = 8;
+  } else {
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 6;
+  }
+  ctx.fillText(foodType.emoji, food.x * CELL + CELL/2, food.y * CELL + CELL/2 + 1);
+  ctx.shadowBlur = 0;
+
+  // Draw snake body (reverse so head draws on top)
+  for (let i = snake.length - 1; i >= 1; i--) {
+    const s = snake[i];
+    const bSize = Math.floor(CELL * 0.75);
+    const offset = (CELL - bSize) / 2;
+
+    // Neon glow behind body
+    ctx.shadowColor = junkBoosted ? '#ff6ec7' : '#00e5ff';
+    ctx.shadowBlur = 4;
+    ctx.drawImage(aliFaceBody, s.x * CELL + offset, s.y * CELL + offset, bSize, bSize);
+    ctx.shadowBlur = 0;
+  }
+
+  // Draw head
+  const h = snake[0];
+  ctx.shadowColor = junkBoosted ? '#ff6ec7' : '#00e5ff';
+  ctx.shadowBlur = 10;
+  ctx.drawImage(aliFaceHead, h.x * CELL, h.y * CELL, CELL, CELL);
+  ctx.shadowBlur = 0;
+
+  // Head direction indicator (small triangle)
+  ctx.fillStyle = junkBoosted ? '#ff6ec7' : '#00e5ff';
+  const cx = h.x * CELL + CELL/2;
+  const cy = h.y * CELL + CELL/2;
+  const tr = CELL * 0.15;
+  ctx.beginPath();
+  ctx.moveTo(cx + dir.x * CELL*0.55, cy + dir.y * CELL*0.55);
+  ctx.lineTo(cx + dir.x * CELL*0.35 - dir.y * tr, cy + dir.y * CELL*0.35 + dir.x * tr);
+  ctx.lineTo(cx + dir.x * CELL*0.35 + dir.y * tr, cy + dir.y * CELL*0.35 - dir.x * tr);
+  ctx.fill();
+}
+
+// ─── INPUT ───
+document.addEventListener('keydown', e => {
+  if (!running) return;
+  switch(e.key) {
+    case 'ArrowUp': case 'w': case 'W':
+      if (dir.y !== 1) nextDir = {x:0,y:-1}; break;
+    case 'ArrowDown': case 's': case 'S':
+      if (dir.y !== -1) nextDir = {x:0,y:1}; break;
+    case 'ArrowLeft': case 'a': case 'A':
+      if (dir.x !== 1) nextDir = {x:-1,y:0}; break;
+    case 'ArrowRight': case 'd': case 'D':
+      if (dir.x !== -1) nextDir = {x:1,y:0}; break;
+  }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d'].includes(e.key)) e.preventDefault();
+});
+
+// ─── TOUCH CONTROLS ───
+let touchStartX, touchStartY;
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  e.preventDefault();
+}, {passive:false});
+canvas.addEventListener('touchend', e => {
+  if (!running) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 20 && dir.x !== -1) nextDir = {x:1,y:0};
+    else if (dx < -20 && dir.x !== 1) nextDir = {x:-1,y:0};
+  } else {
+    if (dy > 20 && dir.y !== -1) nextDir = {x:0,y:1};
+    else if (dy < -20 && dir.y !== 1) nextDir = {x:0,y:-1};
+  }
+  e.preventDefault();
+}, {passive:false});
+
+// ─── BUTTONS ───
+document.getElementById('btnStart').addEventListener('click', startGame);
+document.getElementById('btnRetry').addEventListener('click', startGame);
+
+// ─── INITIAL DRAW ───
+drawGrid();
+</script>
+</body>
+</html>

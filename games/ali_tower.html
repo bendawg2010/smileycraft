@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Tower</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         overflow-x:hidden;
+         background-image: radial-gradient(circle at 50% 0%, rgba(124,58,237,0.10), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; text-align:center; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  canvas { background:linear-gradient(180deg, #0D0D1A 0%, #1a1a3a 100%);
+           border:2px solid var(--purple); border-radius:10px;
+           box-shadow:0 0 30px rgba(124,58,237,0.3); max-width:100%; touch-action:none; }
+  .controls { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--purple),var(--pink));
+         border:none; color:#fff; padding:12px 32px; border-radius:8px; font-size:1rem;
+         letter-spacing:1.5px; cursor:pointer; box-shadow:0 0 15px rgba(124,58,237,0.4); }
+  .btn:hover { transform:translateY(-2px); box-shadow:0 0 25px rgba(124,58,237,0.6); }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .back:hover { background:var(--cyan); color:var(--bg); }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:500px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI TOWER</h1>
+<div class="sub">Stack the Alis. Time your taps. Don't miss.</div>
+<div class="hud">
+  <span>HEIGHT: <b id="height">0</b></span>
+  <span>BEST: <b id="best">0</b></span>
+  <span>COMBO: <b id="combo">0</b></span>
+</div>
+<canvas id="c" width="480" height="600"></canvas>
+<div class="controls">
+  <button class="btn" id="start">START</button>
+</div>
+<div class="tip">CLICK / TAP / SPACE to drop the block &bull; Perfect stacks give combo bonus</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var stack=[]; // fixed placed blocks
+  var current=null; // moving block
+  var camY=0; // camera y offset
+  var running=false, gameOver=false;
+  var height=0, combo=0;
+  var best = parseInt(localStorage.getItem('aliTowerBest')||'0', 10);
+  document.getElementById('best').textContent = best;
+
+  var BASE_W = 220, BLOCK_H = 36;
+  var startX = (W - BASE_W) / 2;
+  var startY = H - 70;
+
+  function hue(i) { return (i*22) % 360; }
+
+  function reset() {
+    stack = [];
+    // Base block
+    stack.push({ x:startX, y:startY, w:BASE_W, h:BLOCK_H, hue:200 });
+    camY = 0;
+    height = 0;
+    combo = 0;
+    gameOver = false;
+    document.getElementById('height').textContent = height;
+    document.getElementById('combo').textContent = combo;
+    spawnCurrent();
+    running = true;
+  }
+
+  function spawnCurrent() {
+    var top = stack[stack.length-1];
+    var speed = 3 + Math.min(height * 0.15, 5);
+    var dir = (stack.length % 2 === 0) ? 1 : -1;
+    current = {
+      x: dir > 0 ? -top.w : W,
+      y: top.y - BLOCK_H - 2,
+      w: top.w,
+      h: BLOCK_H,
+      vx: speed * dir,
+      hue: hue(stack.length)
+    };
+  }
+
+  function drop() {
+    if (!running || gameOver || !current) return;
+    var top = stack[stack.length-1];
+    // Compute overlap
+    var leftEdge = Math.max(current.x, top.x);
+    var rightEdge = Math.min(current.x + current.w, top.x + top.w);
+    var overlap = rightEdge - leftEdge;
+    if (overlap <= 0) {
+      // Miss — game over
+      current.y = current.y; // let it fall visually
+      running = false;
+      gameOver = true;
+      if (height > best) { best = height; localStorage.setItem('aliTowerBest', String(best)); }
+      document.getElementById('best').textContent = best;
+      combo = 0;
+      document.getElementById('combo').textContent = combo;
+      setTimeout(function(){
+        document.getElementById('start').textContent = 'TRY AGAIN';
+        document.getElementById('start').style.display = 'inline-block';
+      }, 600);
+      return;
+    }
+
+    var perfect = Math.abs(current.x - top.x) < 4;
+    if (perfect) {
+      // Snap to same width — combo bonus
+      current.x = top.x;
+      current.w = top.w;
+      combo++;
+    } else {
+      combo = 0;
+      // Trim the current block to the overlap
+      current.x = leftEdge;
+      current.w = overlap;
+    }
+    stack.push({ x:current.x, y: top.y - BLOCK_H - 2, w:current.w, h:BLOCK_H, hue:current.hue });
+    height++;
+    document.getElementById('height').textContent = height;
+    document.getElementById('combo').textContent = combo;
+
+    // Update camera so the top stays in view
+    var topY = stack[stack.length-1].y + camY;
+    if (topY < H * 0.35) {
+      camY += (H * 0.35 - topY);
+    }
+
+    spawnCurrent();
+  }
+
+  function update() {
+    if (!current) return;
+    current.x += current.vx;
+    if (current.x <= -current.w) current.vx = Math.abs(current.vx);
+    if (current.x >= W) current.vx = -Math.abs(current.vx);
+  }
+
+  function drawBlock(b, isCurrent) {
+    var y = b.y + camY;
+    if (y > H + 40 || y < -40) return;
+    ctx.save();
+    ctx.shadowColor = 'hsl(' + b.hue + ',80%,60%)';
+    ctx.shadowBlur = isCurrent ? 16 : 6;
+    var grad = ctx.createLinearGradient(b.x, y, b.x + b.w, y + b.h);
+    grad.addColorStop(0, 'hsl(' + b.hue + ',70%,35%)');
+    grad.addColorStop(1, 'hsl(' + b.hue + ',60%,22%)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(b.x, y, b.w, b.h);
+    ctx.strokeStyle = 'hsl(' + b.hue + ',80%,70%)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(b.x, y, b.w, b.h);
+    ctx.restore();
+
+    // Ali face centered on block
+    if (aliImg.complete && aliImg.naturalWidth) {
+      var fs = b.h - 6;
+      // Fit multiple faces if the block is wide enough
+      var faceCount = Math.max(1, Math.floor(b.w / (fs + 4)));
+      if (faceCount > 5) faceCount = 5;
+      var spacing = b.w / (faceCount + 1);
+      for (var i=1;i<=faceCount;i++){
+        var fx = b.x + spacing * i - fs/2;
+        var fy = y + (b.h - fs)/2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(fx + fs/2, fy + fs/2, fs/2, 0, Math.PI*2);
+        ctx.clip();
+        ctx.drawImage(aliImg, fx, fy, fs, fs);
+        ctx.restore();
+        ctx.beginPath();
+        ctx.arc(fx + fs/2, fy + fs/2, fs/2, 0, Math.PI*2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function draw() {
+    // Starfield bg
+    ctx.fillStyle = 'rgba(13,13,26,0.25)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Horizon guide line at camera 0
+    for (var i=0;i<stack.length;i++) drawBlock(stack[i], false);
+    if (current && !gameOver) drawBlock(current, true);
+
+    // Combo indicator
+    if (combo > 0) {
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 14;
+      ctx.font = "bold 22px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('COMBO x' + combo, W/2, 40);
+      ctx.shadowBlur = 0;
+    }
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 32px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('TOWER FELL', W/2, H/2 - 20);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.font = "bold 22px 'Russo One', sans-serif";
+      ctx.fillText('Height: ' + height, W/2, H/2 + 20);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function loop() {
+    if (running) update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById('start').addEventListener('click', function(){
+    reset();
+    document.getElementById('start').style.display = 'none';
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === ' ' || e.key === 'Enter') { drop(); e.preventDefault(); }
+  });
+  canvas.addEventListener('click', function(){ drop(); });
+  canvas.addEventListener('touchstart', function(e){ drop(); e.preventDefault(); }, {passive:false});
+
+  // Initial draw
+  stack.push({ x:startX, y:startY, w:BASE_W, h:BLOCK_H, hue:200 });
+  loop();
+})();
+</script>
+</body>
+</html>

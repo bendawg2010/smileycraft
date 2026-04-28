@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Plinko</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 0%, rgba(255,215,0,0.1), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--gold); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(255,215,0,0.5); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  canvas { background:linear-gradient(180deg,#141428 0%,#0D0D1A 100%);
+           border:2px solid var(--gold); border-radius:10px;
+           box-shadow:0 0 30px rgba(255,215,0,0.25); max-width:100%; touch-action:none; cursor:crosshair; }
+  .controls { margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--gold),var(--pink));
+         border:none; color:#111; padding:10px 22px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(255,215,0,0.3); font-weight:700; }
+  .btn.secondary { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan); box-shadow:none; font-weight:400; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+  select.btn { padding:9px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI PLINKO</h1>
+<div class="sub">Drop Alis through pegs. Bigger center risk = bigger reward.</div>
+<div class="hud">
+  <span>BANK: <b id="bank">$1000</b></span>
+  <span>BET: <b id="bet">$10</b></span>
+  <span>LAST: <b id="last">—</b></span>
+</div>
+<canvas id="c" width="540" height="640"></canvas>
+<div class="controls">
+  <button class="btn" id="drop">DROP ALI</button>
+  <button class="btn secondary" id="auto">AUTO 10</button>
+  <select id="betSel" class="btn secondary">
+    <option value="10">BET $10</option>
+    <option value="50" selected>BET $50</option>
+    <option value="100">BET $100</option>
+    <option value="500">BET $500</option>
+  </select>
+  <select id="riskSel" class="btn secondary">
+    <option value="low">LOW RISK</option>
+    <option value="med" selected>MEDIUM RISK</option>
+    <option value="high">HIGH RISK</option>
+  </select>
+</div>
+<div class="tip">Click / tap to drop a ball — drops are locked to center &bull; The pegs decide where it lands &bull; HIGH risk: edges pay 300x but you'll see them once in a thousand drops</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  // Multipliers per bin (15 bins) — low/med/high risk profiles.
+  // Tuned so the natural binomial drop distribution gives ~96/94/93% RTP.
+  // Balls drop from CENTER only (you can't aim at the edges).
+  var MULT = {
+    low:  [15,  5,   2.5, 1.4, 1.1, 0.9, 0.8, 0.7, 0.8, 0.9, 1.1, 1.4, 2.5, 5,   15],
+    med:  [50,  15,  5,   2,   1.2, 0.9, 0.6, 0.4, 0.6, 0.9, 1.2, 2,   5,   15,  50],
+    high: [300, 60,  18,  4,   1,   0.5, 0.3, 0.2, 0.3, 0.5, 1,   4,   18,  60,  300]
+  };
+  var BINS = 15;
+
+  // Build pegs in a triangle (rows = 12)
+  var pegs = [];
+  var ROWS = 12;
+  var pegRadius = 5;
+  function buildPegs() {
+    pegs = [];
+    var topPad = 80;
+    var bottomY = H - 110;
+    var spacingY = (bottomY - topPad) / ROWS;
+    for (var row = 0; row < ROWS; row++) {
+      var n = row + 3;
+      var spacingX = W / (n + 1);
+      var y = topPad + row * spacingY;
+      for (var i = 0; i < n; i++) {
+        var x = spacingX * (i + 1);
+        pegs.push({ x: x, y: y, r: pegRadius });
+      }
+    }
+  }
+  buildPegs();
+
+  // Bins
+  var binY = H - 60;
+  var binH = 50;
+  function binWidth() { return W / BINS; }
+
+  // Balls (Ali drops)
+  var balls = [];
+  var bank = parseInt(localStorage.getItem('aliPlinkoBank')||'1000', 10);
+  var lastWin = 0;
+
+  function updateHUD() {
+    document.getElementById('bank').textContent = '$' + bank;
+    document.getElementById('bet').textContent = '$' + currentBet();
+    document.getElementById('last').textContent = lastWin > 0 ? '$' + lastWin : '—';
+  }
+  function currentBet() { return parseInt(document.getElementById('betSel').value, 10); }
+  function currentRisk() { return document.getElementById('riskSel').value; }
+
+  function dropBall() {
+    var bet = currentBet();
+    if (bank < bet) return;
+    bank -= bet;
+    localStorage.setItem('aliPlinkoBank', String(bank));
+    // Always drop from center. Tiny jitter so balls don't all follow the same path.
+    var x = W / 2 + (Math.random() - 0.5) * 6;
+    balls.push({ x: x, y: 30, vx: (Math.random()-0.5)*8, vy: 0, r: 11, settled: false, bet: bet, risk: currentRisk() });
+    updateHUD();
+  }
+
+  // Click/tap anywhere just drops a ball — position is locked to center
+  canvas.addEventListener('click', dropBall);
+  canvas.addEventListener('touchstart', function(e){ dropBall(); e.preventDefault(); }, {passive:false});
+
+  document.getElementById('drop').addEventListener('click', dropBall);
+  document.getElementById('auto').addEventListener('click', function(){
+    var n = 10;
+    var i = 0;
+    var iv = setInterval(function(){
+      if (i++ >= n || bank < currentBet()) { clearInterval(iv); return; }
+      dropBall();
+    }, 280);
+  });
+
+  // Physics
+  function update(dt) {
+    for (var bi = balls.length - 1; bi >= 0; bi--) {
+      var b = balls[bi];
+      if (b.settled) continue;
+      b.vy += 1200 * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      // Wall bounce
+      if (b.x - b.r < 0) { b.x = b.r; b.vx *= -0.6; }
+      if (b.x + b.r > W) { b.x = W - b.r; b.vx *= -0.6; }
+      // Peg collisions
+      for (var i = 0; i < pegs.length; i++) {
+        var p = pegs[i];
+        var dx = b.x - p.x, dy = b.y - p.y;
+        var d2 = dx*dx + dy*dy;
+        var rr = b.r + p.r;
+        if (d2 < rr * rr) {
+          var d = Math.sqrt(d2) || 0.001;
+          var nx = dx / d, ny = dy / d;
+          // Separate
+          b.x = p.x + nx * rr;
+          b.y = p.y + ny * rr;
+          // Reflect velocity
+          var dot = b.vx * nx + b.vy * ny;
+          b.vx = (b.vx - 2 * dot * nx) * 0.55 + (Math.random()-0.5) * 60;
+          b.vy = (b.vy - 2 * dot * ny) * 0.55;
+        }
+      }
+      // Bin landing
+      if (b.y + b.r >= binY) {
+        b.settled = true;
+        var binIdx = Math.floor(b.x / binWidth());
+        if (binIdx < 0) binIdx = 0; if (binIdx >= BINS) binIdx = BINS - 1;
+        var mult = MULT[b.risk][binIdx];
+        var win = Math.floor(b.bet * mult);
+        bank += win;
+        lastWin = win;
+        localStorage.setItem('aliPlinkoBank', String(bank));
+        updateHUD();
+        // Highlight bin
+        b.flashBin = binIdx;
+        b.flashT = 0.6;
+        setTimeout(function(){ var idx = balls.indexOf(b); if (idx >= 0) balls.splice(idx, 1); }, 800);
+      }
+    }
+  }
+
+  // Render
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+    // Pegs
+    for (var i = 0; i < pegs.length; i++) {
+      var p = pegs[i];
+      ctx.save();
+      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 6;
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    // Bins
+    var bw = binWidth();
+    var risk = currentRisk();
+    for (var k = 0; k < BINS; k++) {
+      var m = MULT[risk][k];
+      // Color by multiplier
+      var col;
+      if (m >= 9) col = '#FFD700';
+      else if (m >= 2) col = '#FF006E';
+      else if (m >= 1) col = '#7C3AED';
+      else col = '#3a3a4a';
+      ctx.fillStyle = col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = m >= 9 ? 14 : (m >= 2 ? 8 : 0);
+      ctx.fillRect(k*bw + 2, binY, bw - 4, binH);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = m >= 9 ? '#000' : '#fff';
+      ctx.font = "bold 11px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(m + 'x', k*bw + bw/2, binY + binH/2);
+    }
+    // Balls
+    for (var bi = 0; bi < balls.length; bi++) {
+      var b = balls[bi];
+      ctx.save();
+      ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 12;
+      ctx.fillStyle = '#00FFFF';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      if (aliImg.complete && aliImg.naturalWidth) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI*2); ctx.clip();
+        ctx.drawImage(aliImg, b.x - b.r, b.y - b.r, b.r*2, b.r*2);
+        ctx.restore();
+      }
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      // Flash bin if settled
+      if (b.flashBin != null) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(b.flashBin * bw + 2, binY, bw - 4, binH);
+      }
+    }
+    // Title
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = "bold 11px 'Russo One', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.fillText('DROP ZONE', W/2, 20);
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById('betSel').addEventListener('change', updateHUD);
+  document.getElementById('riskSel').addEventListener('change', updateHUD);
+  updateHUD();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

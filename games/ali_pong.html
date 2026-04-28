@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Pong</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:40px; margin-bottom:10px; font-weight:700; font-size:1.4rem;
+         font-family:'Russo One',sans-serif; letter-spacing:2px; }
+  .hud .you b { color:var(--cyan); font-size:2rem; text-shadow:0 0 14px rgba(0,255,255,0.6); }
+  .hud .cpu b { color:var(--pink); font-size:2rem; text-shadow:0 0 14px rgba(255,0,110,0.6); }
+  canvas { background:#000; border:2px solid var(--cyan); border-radius:10px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); max-width:100%; touch-action:none; cursor:none; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+  select.diff { background:var(--panel); color:var(--cyan); border:1px solid var(--cyan);
+                padding:8px 12px; border-radius:6px; font-family:'Russo One',sans-serif;
+                font-size:0.85rem; margin-top:14px; margin-left:10px; cursor:pointer; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI PONG</h1>
+<div class="sub">First to 7. You vs the CPU.</div>
+<div class="hud">
+  <span class="you">YOU <b id="score1">0</b></span>
+  <span class="cpu"><b id="score2">0</b> CPU</span>
+</div>
+<canvas id="c" width="720" height="480"></canvas>
+<div>
+  <button class="btn" id="start">PLAY</button>
+  <select class="diff" id="diff">
+    <option value="0.65">EASY</option>
+    <option value="0.85" selected>MEDIUM</option>
+    <option value="1.0">HARD</option>
+  </select>
+</div>
+<div class="tip">Mouse or ↑↓ or W S to move &bull; SPACE to serve</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var paddleH = 90, paddleW = 12;
+  var you = { x: 20, y: H/2 - paddleH/2, w: paddleW, h: paddleH, vy: 0, speed: 520 };
+  var cpu = { x: W - 20 - paddleW, y: H/2 - paddleH/2, w: paddleW, h: paddleH, vy: 0 };
+  var ball = { x: W/2, y: H/2, r: 10, vx: 0, vy: 0, trail: [] };
+  var score1 = 0, score2 = 0;
+  var running = false, waitingServe = true, gameOver = false;
+  var cpuSkill = 0.85;
+
+  var keyUp = false, keyDown = false, mouseY = null;
+
+  canvas.addEventListener('mousemove', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseY = (e.clientY - rect.top) * (H/rect.height);
+  });
+  canvas.addEventListener('mouseleave', function(){ mouseY = null; });
+  canvas.addEventListener('touchmove', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseY = (e.touches[0].clientY - rect.top) * (H/rect.height);
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchstart', function(e){
+    var rect = canvas.getBoundingClientRect();
+    mouseY = (e.touches[0].clientY - rect.top) * (H/rect.height);
+    if (waitingServe && running) serve();
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('click', function(){ if (waitingServe && running) serve(); });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { keyUp = true; mouseY = null; e.preventDefault(); }
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { keyDown = true; mouseY = null; e.preventDefault(); }
+    if (e.key === ' ') { if (waitingServe && running) serve(); e.preventDefault(); }
+  });
+  document.addEventListener('keyup', function(e){
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keyUp = false;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keyDown = false;
+  });
+
+  document.getElementById('diff').addEventListener('change', function(e){ cpuSkill = parseFloat(e.target.value); });
+  cpuSkill = parseFloat(document.getElementById('diff').value);
+
+  function serve(dir) {
+    if (dir === undefined) dir = Math.random() < 0.5 ? -1 : 1;
+    ball.x = W/2; ball.y = H/2;
+    var ang = (Math.random() - 0.5) * (Math.PI/3);
+    var sp = 380;
+    ball.vx = Math.cos(ang) * sp * dir;
+    ball.vy = Math.sin(ang) * sp;
+    ball.trail.length = 0;
+    waitingServe = false;
+  }
+
+  function updateHUD() {
+    document.getElementById('score1').textContent = score1;
+    document.getElementById('score2').textContent = score2;
+  }
+
+  function update(dt) {
+    // Player paddle
+    var minY = 10, maxY = H - 10 - you.h;
+    if (mouseY !== null) {
+      var wantY = mouseY - you.h / 2;
+      you.y += (wantY - you.y) * Math.min(1, dt * 22);
+    } else {
+      var dir = (keyDown ? 1 : 0) - (keyUp ? 1 : 0);
+      you.y += dir * you.speed * dt;
+    }
+    if (you.y < minY) you.y = minY;
+    if (you.y > maxY) you.y = maxY;
+
+    // CPU AI — anticipate ball
+    var target = H/2;
+    if (ball.vx > 0) {
+      // Predict ball y when it reaches cpu.x (simple linear, bouncing off walls)
+      var bx = ball.x, by = ball.y, bvx = ball.vx, bvy = ball.vy;
+      var steps = 0;
+      while (bx < cpu.x && steps < 200) {
+        bx += bvx * 0.016;
+        by += bvy * 0.016;
+        if (by < 0 || by > H) bvy = -bvy;
+        steps++;
+      }
+      target = by;
+      // Add imperfection based on difficulty
+      target += (Math.random() - 0.5) * (1 - cpuSkill) * 200;
+    }
+    var cpuSpeed = 320 + cpuSkill * 280;
+    var cpuTarget = target - cpu.h / 2;
+    var cy = cpu.y;
+    if (cy < cpuTarget) cy = Math.min(cpuTarget, cy + cpuSpeed * dt);
+    else if (cy > cpuTarget) cy = Math.max(cpuTarget, cy - cpuSpeed * dt);
+    cpu.y = Math.max(minY, Math.min(maxY, cy));
+
+    if (waitingServe) return;
+
+    // Ball
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    ball.trail.push({ x: ball.x, y: ball.y, t: 0.3 });
+    if (ball.trail.length > 14) ball.trail.shift();
+    for (var i = ball.trail.length - 1; i >= 0; i--) {
+      ball.trail[i].t -= dt;
+      if (ball.trail[i].t <= 0) ball.trail.splice(i, 1);
+    }
+
+    if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+    if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy); }
+
+    // Paddle collisions
+    function paddleHit(pd, goingLeft) {
+      if (ball.x + ball.r > pd.x && ball.x - ball.r < pd.x + pd.w
+          && ball.y > pd.y && ball.y < pd.y + pd.h) {
+        var hit = (ball.y - (pd.y + pd.h/2)) / (pd.h/2);
+        var ang = hit * (Math.PI/3);
+        var sp = Math.hypot(ball.vx, ball.vy) + 15;
+        ball.vx = Math.cos(ang) * sp * (goingLeft ? -1 : 1);
+        ball.vy = Math.sin(ang) * sp;
+        if (goingLeft) ball.x = pd.x - ball.r - 1;
+        else ball.x = pd.x + pd.w + ball.r + 1;
+      }
+    }
+    if (ball.vx < 0) paddleHit(you, false);
+    if (ball.vx > 0) paddleHit(cpu, true);
+
+    // Score
+    if (ball.x < -20) {
+      score2++;
+      updateHUD();
+      if (score2 >= 7) { endGame(); }
+      else { waitingServe = true; ball.x = W/2; ball.y = H/2; ball.vx = 0; ball.vy = 0; }
+    } else if (ball.x > W + 20) {
+      score1++;
+      updateHUD();
+      if (score1 >= 7) { endGame(); }
+      else { waitingServe = true; ball.x = W/2; ball.y = H/2; ball.vx = 0; ball.vy = 0; }
+    }
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+    document.getElementById('start').textContent = 'PLAY AGAIN';
+  }
+
+  function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // Center dashed line
+    ctx.strokeStyle = 'rgba(0,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 10]);
+    ctx.beginPath();
+    ctx.moveTo(W/2, 10);
+    ctx.lineTo(W/2, H - 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Paddles
+    function drawPaddle(pd, color) {
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      var grad = ctx.createLinearGradient(pd.x, pd.y, pd.x, pd.y + pd.h);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, '#fff');
+      ctx.fillStyle = grad;
+      ctx.fillRect(pd.x, pd.y, pd.w, pd.h);
+      ctx.restore();
+    }
+    drawPaddle(you, '#00FFFF');
+    drawPaddle(cpu, '#FF006E');
+
+    // Trail
+    for (var i = 0; i < ball.trail.length; i++) {
+      var t = ball.trail[i];
+      var a = t.t / 0.3;
+      ctx.globalAlpha = a * 0.3;
+      ctx.fillStyle = '#00FFFF';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, ball.r * a, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Ball = Ali face
+    ctx.save();
+    ctx.shadowColor = '#FFFFFF';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.restore();
+    if (aliImg.complete && aliImg.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r - 0.5, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, ball.x - ball.r, ball.y - ball.r, ball.r*2, ball.r*2);
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (waitingServe && running) {
+      ctx.fillStyle = '#00FFFF';
+      ctx.font = "bold 16px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('CLICK / TAP / SPACE TO SERVE', W/2, H - 30);
+    }
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      var win = score1 > score2;
+      ctx.fillStyle = win ? '#00FFFF' : '#FF006E';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 36px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(win ? 'YOU WIN' : 'CPU WINS', W/2, H/2);
+      ctx.font = "bold 18px 'Russo One', sans-serif";
+      ctx.fillText(score1 + ' - ' + score2, W/2, H/2 + 30);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    score1 = 0; score2 = 0;
+    you.y = H/2 - you.h/2;
+    cpu.y = H/2 - cpu.h/2;
+    ball.x = W/2; ball.y = H/2; ball.vx = 0; ball.vy = 0;
+    waitingServe = true;
+    gameOver = false; running = true;
+    updateHUD();
+  }
+
+  document.getElementById('start').addEventListener('click', startGame);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

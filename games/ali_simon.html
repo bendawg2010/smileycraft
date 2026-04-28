@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Simon</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 30%, rgba(124,58,237,0.08), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:16px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .simon { position:relative; width:360px; height:360px; border-radius:50%;
+           background:#0D0D1A; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;
+           gap:10px; padding:10px; box-shadow:0 0 40px rgba(124,58,237,0.3);
+           border:3px solid #1a1a3a; }
+  .pad { background:rgba(255,255,255,0.05); border:2px solid rgba(255,255,255,0.2);
+         cursor:pointer; transition:all 0.1s; display:flex; align-items:center; justify-content:center;
+         position:relative; overflow:hidden; }
+  .pad.a { border-top-left-radius:180px; background:rgba(0,255,255,0.15); }
+  .pad.b { border-top-right-radius:180px; background:rgba(255,0,110,0.15); }
+  .pad.c { border-bottom-left-radius:180px; background:rgba(255,215,0,0.15); }
+  .pad.d { border-bottom-right-radius:180px; background:rgba(46,204,113,0.15); }
+  .pad.active { transform:scale(0.96); filter:brightness(3); }
+  .pad.a.active { background:#00FFFF; box-shadow:inset 0 0 40px #fff, 0 0 40px #00FFFF; }
+  .pad.b.active { background:#FF006E; box-shadow:inset 0 0 40px #fff, 0 0 40px #FF006E; }
+  .pad.c.active { background:#FFD700; box-shadow:inset 0 0 40px #fff, 0 0 40px #FFD700; }
+  .pad.d.active { background:#2ecc71; box-shadow:inset 0 0 40px #fff, 0 0 40px #2ecc71; }
+  .pad img { width:40%; height:40%; border-radius:50%;
+             border:2px solid rgba(255,255,255,0.4); object-fit:cover;
+             opacity:0.3; transition:opacity 0.1s; }
+  .pad.active img { opacity:1; }
+  .center-hub { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                width:120px; height:120px; border-radius:50%;
+                background:#141428; border:3px solid var(--purple);
+                display:flex; align-items:center; justify-content:center;
+                flex-direction:column; box-shadow:inset 0 0 20px rgba(0,0,0,0.6);
+                font-family:'Russo One',sans-serif; }
+  .center-hub .level { font-size:2.2rem; color:var(--cyan); text-shadow:0 0 15px rgba(0,255,255,0.7); line-height:1; }
+  .center-hub .label { font-size:0.6rem; color:var(--muted); letter-spacing:2px; margin-top:2px; }
+  .controls { margin-top:20px; display:flex; gap:10px; align-items:center; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--purple),var(--pink));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(124,58,237,0.3); }
+  .btn.secondary { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan); box-shadow:none; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:12px; text-align:center; max-width:520px; }
+  .msg { margin-top:12px; font-family:'Russo One',sans-serif; font-size:1.1rem; min-height:28px; letter-spacing:2px; }
+  .msg.watch { color:var(--gold); }
+  .msg.go { color:var(--cyan); text-shadow:0 0 12px rgba(0,255,255,0.5); }
+  .msg.fail { color:var(--pink); text-shadow:0 0 12px rgba(255,0,110,0.5); }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI SIMON</h1>
+<div class="sub">Watch Ali's pattern. Repeat it. Each round adds one step.</div>
+<div class="hud">
+  <span>LEVEL: <b id="level">0</b></span>
+  <span>BEST: <b id="best">0</b></span>
+  <span>MODE: <b id="mode">—</b></span>
+</div>
+<div class="simon" id="simon">
+  <div class="pad a" data-k="0"><img src="/ali.jpg" alt=""></div>
+  <div class="pad b" data-k="1"><img src="/ali.jpg" alt=""></div>
+  <div class="pad c" data-k="2"><img src="/ali.jpg" alt=""></div>
+  <div class="pad d" data-k="3"><img src="/ali.jpg" alt=""></div>
+  <div class="center-hub">
+    <div class="level" id="centerLevel">0</div>
+    <div class="label">LEVEL</div>
+  </div>
+</div>
+<div class="msg" id="msg">Press START to begin</div>
+<div class="controls">
+  <button class="btn" id="start">START</button>
+  <select class="btn secondary" id="diff">
+    <option value="1">EASY (slow)</option>
+    <option value="2" selected>MEDIUM</option>
+    <option value="3">HARD (fast)</option>
+  </select>
+</div>
+<div class="tip">Click/tap pads or press <b>Q W A S</b> keys to repeat the pattern</div>
+
+<script>
+(function(){
+  var pads = Array.prototype.slice.call(document.querySelectorAll('.pad'));
+  var levelEl = document.getElementById('level');
+  var centerLevelEl = document.getElementById('centerLevel');
+  var bestEl = document.getElementById('best');
+  var modeEl = document.getElementById('mode');
+  var msgEl = document.getElementById('msg');
+  var startBtn = document.getElementById('start');
+  var diffSel = document.getElementById('diff');
+
+  var best = parseInt(localStorage.getItem('aliSimonBest')||'0', 10);
+  bestEl.textContent = best;
+
+  var sequence = [];
+  var inputIdx = 0;
+  var level = 0;
+  var playing = false, userTurn = false;
+  var flashDuration = 500; // ms
+
+  function refreshSpeed() {
+    var d = parseInt(diffSel.value, 10);
+    flashDuration = d === 1 ? 620 : (d === 2 ? 440 : 280);
+  }
+  diffSel.addEventListener('change', refreshSpeed);
+  refreshSpeed();
+
+  function flashPad(idx, duration) {
+    var pad = pads[idx];
+    pad.classList.add('active');
+    setTimeout(function(){ pad.classList.remove('active'); }, duration || 380);
+  }
+
+  function playSequence() {
+    userTurn = false;
+    msgEl.textContent = 'WATCH';
+    msgEl.className = 'msg watch';
+    modeEl.textContent = 'WATCH';
+    var i = 0;
+    var interval = setInterval(function(){
+      if (i >= sequence.length) {
+        clearInterval(interval);
+        userTurn = true;
+        inputIdx = 0;
+        msgEl.textContent = 'GO';
+        msgEl.className = 'msg go';
+        modeEl.textContent = 'REPEAT';
+        return;
+      }
+      flashPad(sequence[i], flashDuration * 0.6);
+      i++;
+    }, flashDuration);
+  }
+
+  function addStep() {
+    sequence.push(Math.floor(Math.random() * 4));
+    level = sequence.length;
+    levelEl.textContent = level;
+    centerLevelEl.textContent = level;
+    playSequence();
+  }
+
+  function onInput(idx) {
+    if (!userTurn || !playing) return;
+    flashPad(idx, 260);
+    if (sequence[inputIdx] === idx) {
+      inputIdx++;
+      if (inputIdx >= sequence.length) {
+        userTurn = false;
+        msgEl.textContent = 'GOOD!';
+        msgEl.className = 'msg go';
+        setTimeout(addStep, 700);
+      }
+    } else {
+      playing = false;
+      userTurn = false;
+      msgEl.textContent = 'WRONG! LEVEL ' + level;
+      msgEl.className = 'msg fail';
+      modeEl.textContent = 'GAME OVER';
+      if (level - 1 > best) { best = level - 1; localStorage.setItem('aliSimonBest', String(best)); bestEl.textContent = best; }
+      startBtn.textContent = 'PLAY AGAIN';
+      // Flash red all pads
+      pads.forEach(function(p){ p.style.boxShadow = '0 0 20px #ff4444'; });
+      setTimeout(function(){ pads.forEach(function(p){ p.style.boxShadow = ''; }); }, 800);
+    }
+  }
+
+  pads.forEach(function(pad){
+    pad.addEventListener('mousedown', function(){ onInput(parseInt(pad.dataset.k, 10)); });
+    pad.addEventListener('touchstart', function(e){ onInput(parseInt(pad.dataset.k, 10)); e.preventDefault(); }, {passive:false});
+  });
+
+  document.addEventListener('keydown', function(e){
+    var map = { 'q':0, 'Q':0, 'w':1, 'W':1, 'a':2, 'A':2, 's':3, 'S':3 };
+    if (map[e.key] !== undefined) onInput(map[e.key]);
+  });
+
+  startBtn.addEventListener('click', function(){
+    sequence = [];
+    level = 0;
+    levelEl.textContent = 0;
+    centerLevelEl.textContent = 0;
+    playing = true;
+    startBtn.textContent = 'STOP';
+    startBtn.onclick = null;  // will be reassigned below; keep simple: add listener once more
+    setTimeout(addStep, 600);
+  });
+
+  // Simple re-listen so clicking the button when in game restarts
+  startBtn.addEventListener('click', function(){
+    if (playing) {
+      // ignore extra clicks during play
+    }
+  });
+})();
+</script>
+</body>
+</html>

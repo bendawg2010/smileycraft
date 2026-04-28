@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Math</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 0%, rgba(124,58,237,0.12), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .arena { position:relative; width:min(520px, 95vw); padding:32px 20px; background:var(--panel);
+           border:2px solid var(--purple); border-radius:14px;
+           box-shadow:0 0 30px rgba(124,58,237,0.3); text-align:center; }
+  .ali-face { width:90px; height:90px; border-radius:50%;
+              background:url('/ali.jpg') center/cover no-repeat;
+              border:3px solid var(--cyan); box-shadow:0 0 20px rgba(0,255,255,0.4);
+              margin:0 auto 16px; }
+  .question { font-family:'Russo One',sans-serif; font-size:3rem;
+              color:#fff; letter-spacing:2px; margin:10px 0 18px;
+              text-shadow:0 0 16px rgba(255,255,255,0.4); }
+  .choices { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .choice { background:rgba(20,20,40,0.8); border:2px solid var(--cyan);
+            color:var(--cyan); padding:14px; border-radius:10px;
+            font-family:'Russo One',sans-serif; font-size:1.4rem; cursor:pointer;
+            transition:transform 0.08s, box-shadow 0.15s, background 0.15s; }
+  .choice:hover { transform:translateY(-2px); box-shadow:0 0 20px rgba(0,255,255,0.4); background:rgba(0,255,255,0.1); }
+  .choice.correct { background:rgba(46,204,113,0.25); border-color:#2ecc71; color:#2ecc71;
+                    box-shadow:0 0 20px rgba(46,204,113,0.5); }
+  .choice.wrong { background:rgba(255,68,68,0.25); border-color:#FF4444; color:#FF4444;
+                  box-shadow:0 0 20px rgba(255,68,68,0.5); }
+  .timebar { height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;
+             margin-bottom:14px; }
+  .timebar-fill { height:100%; background:linear-gradient(90deg,#FF006E,#FFD700);
+                  transition:width 0.1s linear; box-shadow:0 0 10px rgba(255,215,0,0.5); }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--purple),var(--pink));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(124,58,237,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+  .combo { color:var(--gold); text-shadow:0 0 10px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI MATH</h1>
+<div class="sub">Pick the correct answer. Faster = more points.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>STREAK: <b id="streak" class="combo">x1</b></span>
+  <span>LEVEL: <b id="level">1</b></span>
+</div>
+<div class="arena">
+  <div class="ali-face"></div>
+  <div class="timebar"><div class="timebar-fill" id="timeFill" style="width:100%;"></div></div>
+  <div class="question" id="question">—</div>
+  <div class="choices" id="choices"></div>
+  <button class="btn" id="start" style="margin-top:20px;">START</button>
+</div>
+<div class="tip">1 / 2 / 3 / 4 keys to pick &bull; Full bar = max points &bull; Empty bar = game over</div>
+
+<script>
+(function(){
+  var scoreEl = document.getElementById('score');
+  var streakEl = document.getElementById('streak');
+  var levelEl = document.getElementById('level');
+  var qEl = document.getElementById('question');
+  var choicesEl = document.getElementById('choices');
+  var timeFill = document.getElementById('timeFill');
+  var startBtn = document.getElementById('start');
+
+  var score = 0, streak = 1, level = 1;
+  var running = false, locked = false;
+  var answer = 0;
+  var timeLeft = 0, timeMax = 0;
+
+  function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+
+  function nextQuestion() {
+    locked = false;
+    // Difficulty scales with level
+    var ops = level < 2 ? ['+'] :
+              level < 4 ? ['+','-'] :
+              level < 7 ? ['+','-','×'] :
+                          ['+','-','×','÷'];
+    var op = ops[Math.floor(Math.random() * ops.length)];
+    var maxN = 8 + level * 4;
+    var a = randInt(1, maxN), b = randInt(1, maxN);
+    var expr = '';
+    if (op === '+') { answer = a + b; expr = a + ' + ' + b; }
+    else if (op === '-') {
+      if (a < b) { var t = a; a = b; b = t; }
+      answer = a - b; expr = a + ' − ' + b;
+    }
+    else if (op === '×') {
+      a = randInt(2, 9 + Math.floor(level/2));
+      b = randInt(2, 9 + Math.floor(level/2));
+      answer = a * b; expr = a + ' × ' + b;
+    }
+    else if (op === '÷') {
+      b = randInt(2, 9);
+      var result = randInt(2, 9 + Math.floor(level/2));
+      a = b * result;
+      answer = result; expr = a + ' ÷ ' + b;
+    }
+    qEl.textContent = expr + ' = ?';
+
+    // 4 choices, one correct
+    var used = {}; used[answer] = true;
+    var options = [answer];
+    while (options.length < 4) {
+      var spread = Math.max(3, Math.floor(Math.abs(answer) * 0.35) + 2);
+      var cand = answer + randInt(-spread, spread);
+      if (cand < 0 && op !== '-') continue;
+      if (used[cand]) continue;
+      used[cand] = true;
+      options.push(cand);
+    }
+    // Shuffle
+    for (var i = options.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = options[i]; options[i] = options[j]; options[j] = tmp;
+    }
+
+    while (choicesEl.firstChild) choicesEl.removeChild(choicesEl.firstChild);
+    options.forEach(function(v, idx){
+      var btn = document.createElement('button');
+      btn.className = 'choice';
+      btn.textContent = String(v);
+      btn.addEventListener('click', function(){ pick(v, btn); });
+      btn.dataset.keyIdx = (idx + 1);
+      choicesEl.appendChild(btn);
+    });
+
+    // Set time
+    timeMax = Math.max(3, 8 - level * 0.3);
+    timeLeft = timeMax;
+    timeFill.style.width = '100%';
+  }
+
+  function pick(val, btn) {
+    if (!running || locked) return;
+    locked = true;
+    if (val === answer) {
+      btn.classList.add('correct');
+      var speedPct = timeLeft / timeMax;
+      var pts = Math.max(10, Math.floor(100 * speedPct + level * 10));
+      score += pts * streak;
+      streak++;
+      streakEl.textContent = 'x' + streak;
+      // Level up every 5 in a row
+      var nextLevel = 1 + Math.floor((streak - 1) / 5);
+      if (nextLevel > level) { level = nextLevel; levelEl.textContent = level; }
+      scoreEl.textContent = score;
+      setTimeout(nextQuestion, 420);
+    } else {
+      btn.classList.add('wrong');
+      // Show correct
+      [].forEach.call(choicesEl.children, function(c){
+        if (parseInt(c.textContent, 10) === answer) c.classList.add('correct');
+      });
+      loseLife();
+    }
+  }
+
+  function loseLife() {
+    // Reset streak + cost some time
+    streak = 1;
+    streakEl.textContent = 'x1';
+    timeLeft = Math.min(timeLeft, 1.5); // keep a sliver
+    setTimeout(function(){
+      if (running) nextQuestion();
+    }, 700);
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (!running) return;
+    var idx = ['1','2','3','4'].indexOf(e.key);
+    if (idx === -1) return;
+    var btn = choicesEl.children[idx];
+    if (btn) {
+      var v = parseInt(btn.textContent, 10);
+      pick(v, btn);
+    }
+  });
+
+  function updateLoop() {
+    if (!running) { requestAnimationFrame(updateLoop); return; }
+    var now = performance.now();
+    if (!updateLoop._last) updateLoop._last = now;
+    var dt = Math.min(0.05, (now - updateLoop._last) / 1000);
+    updateLoop._last = now;
+
+    if (!locked) {
+      timeLeft -= dt;
+      timeFill.style.width = Math.max(0, timeLeft / timeMax * 100) + '%';
+      if (timeLeft <= 0) {
+        // Time out
+        locked = true;
+        [].forEach.call(choicesEl.children, function(c){
+          if (parseInt(c.textContent, 10) === answer) c.classList.add('correct');
+        });
+        streak = 1;
+        streakEl.textContent = 'x1';
+        // Game over on level >= 3 timeout, otherwise continue
+        if (level >= 3) endGame();
+        else setTimeout(function(){ if (running) nextQuestion(); }, 700);
+      }
+    }
+    requestAnimationFrame(updateLoop);
+  }
+
+  function endGame() {
+    running = false;
+    qEl.textContent = 'TIME OUT — Final: ' + score;
+    startBtn.textContent = 'PLAY AGAIN';
+  }
+
+  function startGame() {
+    score = 0; streak = 1; level = 1;
+    scoreEl.textContent = 0;
+    streakEl.textContent = 'x1';
+    levelEl.textContent = 1;
+    running = true;
+    nextQuestion();
+    startBtn.textContent = 'RESET';
+  }
+
+  startBtn.addEventListener('click', function(){
+    if (!running) startGame();
+    else { running = false; startGame(); }
+  });
+  requestAnimationFrame(updateLoop);
+})();
+</script>
+</body>
+</html>

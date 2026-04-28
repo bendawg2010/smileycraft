@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Dash</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:#000; color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:16px; }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:1.8rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:4px 0 2px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.82rem; margin-bottom:10px; }
+  .stage { position:relative; width:min(900px, 98vw); aspect-ratio:16/9; }
+  canvas { width:100%; height:100%; display:block; border:2px solid var(--purple); border-radius:8px;
+           box-shadow:0 0 30px rgba(124,58,237,0.3); background:#000; touch-action:none; }
+  .top-ui { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:5;
+            width:70%; max-width:500px; pointer-events:none; }
+  .pct-bar-wrap { background:rgba(0,0,0,0.5); border:2px solid rgba(255,255,255,0.4);
+                  border-radius:12px; height:20px; overflow:hidden; position:relative; }
+  .pct-bar { height:100%; background:linear-gradient(90deg,#FF006E,#FFD700,#00FFFF);
+             width:0%; box-shadow:0 0 10px currentColor; }
+  .pct-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+              font-family:'Russo One',sans-serif; font-size:0.8rem; color:#fff;
+              text-shadow:0 0 6px rgba(0,0,0,0.9); letter-spacing:2px; }
+  .attempts { position:absolute; top:40px; left:50%; transform:translateX(-50%); z-index:5;
+              font-family:'Russo One',sans-serif; color:rgba(255,255,255,0.7);
+              font-size:0.85rem; letter-spacing:2px; pointer-events:none;
+              text-shadow:0 0 8px rgba(0,0,0,0.9); }
+  .mode-badge { position:absolute; top:10px; right:12px; z-index:5;
+                background:rgba(0,255,255,0.2); border:1px solid var(--cyan); color:var(--cyan);
+                padding:4px 10px; border-radius:6px; font-family:'Russo One',sans-serif;
+                font-size:0.75rem; letter-spacing:1.5px; display:none; }
+  .mode-badge.show { display:block; }
+  .overlay { position:absolute; inset:0; background:rgba(6,6,18,0.92); display:flex;
+             align-items:center; justify-content:center; flex-direction:column; z-index:10;
+             border-radius:8px; padding:20px; }
+  .overlay.hidden { display:none; }
+  .title { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:clamp(2rem,6vw,3.6rem);
+           letter-spacing:6px; text-shadow:0 0 20px rgba(0,255,255,0.7), 0 0 40px rgba(124,58,237,0.5);
+           margin:0; }
+  .subtitle { font-family:'Chakra Petch',sans-serif; color:var(--muted); font-size:1rem;
+              letter-spacing:4px; margin-top:4px; margin-bottom:22px; }
+  .menu-btns { display:flex; flex-direction:column; gap:10px; min-width:240px; max-width:320px; width:90%; }
+  .menu-btn { font-family:'Russo One',sans-serif; font-size:1rem; padding:14px 20px;
+              border-radius:8px; border:2px solid var(--purple); cursor:pointer;
+              background:linear-gradient(135deg,rgba(124,58,237,0.3),rgba(255,0,110,0.2));
+              color:#fff; letter-spacing:3px; transition:transform 0.1s, box-shadow 0.15s;
+              box-shadow:0 0 14px rgba(124,58,237,0.3); }
+  .menu-btn:hover { transform:translateY(-2px); box-shadow:0 0 22px rgba(124,58,237,0.7); }
+  .menu-btn.secondary { background:rgba(20,20,40,0.8); border-color:var(--cyan); box-shadow:none; }
+  .menu-btn.secondary:hover { box-shadow:0 0 18px rgba(0,255,255,0.5); }
+  .info-panel { background:rgba(20,20,40,0.9); border:2px solid var(--cyan); border-radius:10px;
+                padding:14px 18px; margin-top:14px; max-width:420px; }
+  .info-panel h3 { margin:0 0 8px; font-family:'Russo One',sans-serif; color:var(--cyan); letter-spacing:2px; font-size:0.95rem; }
+  .info-panel .row { font-size:0.85rem; color:#ddd; margin:4px 0; display:flex; justify-content:space-between; gap:12px; }
+  .info-panel .row b { color:var(--gold); font-family:'Russo One',sans-serif; letter-spacing:1px; }
+  .best-display { color:var(--cyan); font-family:'Russo One',sans-serif; margin-top:8px; letter-spacing:2px; }
+  .death-overlay { position:absolute; inset:0; background:rgba(255,0,110,0.15); pointer-events:none;
+                   opacity:0; transition:opacity 0.08s; z-index:4; border-radius:8px; }
+  .death-overlay.show { opacity:1; }
+  .back { position:fixed; top:10px; left:10px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; z-index:20; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:8px; text-align:center; max-width:600px; }
+  kbd { display:inline-block; background:rgba(124,58,237,0.3); border:1px solid var(--purple);
+        border-radius:4px; padding:1px 6px; font-family:'Russo One',sans-serif; font-size:0.72rem;
+        letter-spacing:1px; color:#fff; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI DASH</h1>
+<div class="sub">Tap the rhythm. Jump the spikes. Ride the orbs.</div>
+<div class="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+  <div class="top-ui">
+    <div class="pct-bar-wrap"><div class="pct-bar" id="pctBar"></div><div class="pct-text" id="pctText">0%</div></div>
+  </div>
+  <div class="attempts" id="attempts">ATTEMPT 1</div>
+  <div class="mode-badge" id="modeBadge">PRACTICE</div>
+  <div class="death-overlay" id="deathOv"></div>
+
+  <div class="overlay" id="overlay">
+    <div id="menuView">
+      <div class="title">ALI DASH</div>
+      <div class="subtitle">GEOMETRY ALI</div>
+      <div class="best-display" id="bestLine"></div>
+      <div class="menu-btns" style="margin-top:18px;">
+        <button class="menu-btn" id="btnPlay">PLAY</button>
+        <button class="menu-btn secondary" id="btnPractice">PRACTICE MODE</button>
+        <button class="menu-btn secondary" id="btnHow">HOW TO PLAY</button>
+      </div>
+    </div>
+    <div id="howView" style="display:none;">
+      <div class="title" style="font-size:2rem;">HOW TO PLAY</div>
+      <div class="info-panel">
+        <h3>CONTROLS</h3>
+        <div class="row"><span>Jump</span><b><kbd>SPACE</kbd> / <kbd>CLICK</kbd> / <kbd>TAP</kbd></b></div>
+        <div class="row"><span>Ship thrust</span><b>Hold jump</b></div>
+        <div class="row"><span>Double-jump orb</span><b>Tap on yellow orb</b></div>
+        <div class="row"><span>Jump pad</span><b>Auto-boost on pink</b></div>
+        <div class="row"><span>Portal</span><b>Cube ↔ Ship</b></div>
+      </div>
+      <div class="info-panel">
+        <h3>PRACTICE MODE</h3>
+        <div class="row"><span>Place checkpoint</span><b><kbd>Z</kbd></b></div>
+        <div class="row"><span>Remove last</span><b><kbd>X</kbd></b></div>
+        <div class="row"><span>On death</span><b>Respawn at last green flag</b></div>
+      </div>
+      <div class="menu-btns" style="margin-top:16px;">
+        <button class="menu-btn secondary" id="btnBack1">BACK</button>
+      </div>
+    </div>
+    <div id="deathView" style="display:none;">
+      <div class="title" style="font-size:2rem;color:#FF006E;text-shadow:0 0 22px rgba(255,0,110,0.7);">YOU DIED</div>
+      <div class="subtitle"><span id="deathPct">0%</span></div>
+      <div class="best-display" id="bestLine2"></div>
+      <div class="menu-btns" style="margin-top:14px;">
+        <button class="menu-btn" id="btnRetry">RETRY</button>
+        <button class="menu-btn secondary" id="btnMenu">MENU</button>
+      </div>
+    </div>
+    <div id="winView" style="display:none;">
+      <div class="title" style="color:#FFD700;text-shadow:0 0 22px rgba(255,215,0,0.7);">LEVEL COMPLETE!</div>
+      <div class="subtitle">100%</div>
+      <div class="menu-btns" style="margin-top:14px;">
+        <button class="menu-btn" id="btnAgain">PLAY AGAIN</button>
+        <button class="menu-btn secondary" id="btnMenu2">MENU</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="tip"><kbd>SPACE</kbd> / <kbd>CLICK</kbd> / <kbd>TAP</kbd> jump &bull; Practice: <kbd>Z</kbd> checkpoint, <kbd>X</kbd> remove &bull; <kbd>ESC</kbd> menu</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var overlay = document.getElementById('overlay');
+  var menuView = document.getElementById('menuView');
+  var howView = document.getElementById('howView');
+  var deathView = document.getElementById('deathView');
+  var winView = document.getElementById('winView');
+  var pctBar = document.getElementById('pctBar');
+  var pctText = document.getElementById('pctText');
+  var attemptsEl = document.getElementById('attempts');
+  var modeBadge = document.getElementById('modeBadge');
+  var deathOv = document.getElementById('deathOv');
+  var bestLine = document.getElementById('bestLine');
+  var bestLine2 = document.getElementById('bestLine2');
+  var deathPct = document.getElementById('deathPct');
+
+  var best = parseFloat(localStorage.getItem('aliDashBest') || '0');
+  function refreshBest() {
+    var txt = best > 0 ? 'BEST: ' + best.toFixed(0) + '%' : '';
+    bestLine.textContent = txt;
+    bestLine2.textContent = txt;
+  }
+  refreshBest();
+
+  // --- Physics constants ---
+  // Jump arc at scroll 520 covers ~328px horizontally, peaks at ~129px up
+  var GRAVITY = 2400;
+  var JUMP = 820;
+  var SCROLL = 480;
+  var PLAYER_SIZE = 42;
+  var CELL = 60;
+  var GROUND_Y = H - 80;
+
+  // --- Level design (hand-tuned & beatable) ---
+  // Design rules enforced:
+  //   - Min 300px between grouped spikes (≥380px after multi-spike clusters)
+  //   - Max 3 spikes in a cluster
+  //   - Blocks give extra runway; stair steps ≤ 2 cells rise per step
+  //   - Orb placement matches a natural arc (~300px after a takeoff)
+  //   - Pad jumps reach tall 3-cell blocks or 3-wide spike clusters
+  //   - Ship section has 100px+ vertical corridors and 160px+ spike spacing
+  var obstacles = [];
+  var LEVEL_LENGTH = 0;
+
+  function buildLevel() {
+    obstacles = [];
+
+    var x = 960;  // start position; gives player ~1.5s of calm intro
+
+    function spike(px){ obstacles.push({ type:'spike', x:px, y:GROUND_Y - CELL, w:CELL, h:CELL }); }
+    function spikeTop(px){ obstacles.push({ type:'spike-top', x:px, y:20, w:CELL, h:CELL }); }
+    function block(px, h){ obstacles.push({ type:'block', x:px, y:GROUND_Y - h*CELL, w:CELL, h:h*CELL }); }
+    function orb(px, yCells){ obstacles.push({ type:'orb', x:px, y:GROUND_Y - yCells*CELL, w:50, h:50, cx:px+25, cy:GROUND_Y - yCells*CELL + 25 }); }
+    function pad(px){ obstacles.push({ type:'pad', x:px, y:GROUND_Y - 14, w:CELL, h:14 }); }
+    function shipPortal(px, on){ obstacles.push({ type:on?'ship-start':'ship-end', x:px, y:0, w:30, h:H }); }
+
+    // ════ SECTION 1: INTRO — simple single spikes (0-15%) ════
+    spike(x); x += 340;
+    spike(x); x += 340;
+    spike(x); x += 380;
+    // double spike
+    spike(x); spike(x+CELL); x += CELL + 360;
+    spike(x); x += 340;
+    spike(x); x += 380;
+
+    // ════ SECTION 2: STAIRS + SPIKE (15-30%) ════
+    // Single step up (land on block, jump off)
+    block(x, 1); x += CELL + 260;   // 260px clears between block and spike
+    spike(x); x += 340;
+    // Step down: tall block then spike
+    block(x, 2); x += CELL + 300;   // more room since you jump from elevated
+    spike(x); x += 340;
+    // Small staircase 1,2,1 — clearable paths
+    block(x, 1); block(x+CELL, 2); block(x+CELL*2, 1); x += CELL*3 + 320;
+    spike(x); x += 340;
+
+    // ════ SECTION 3: PAD + ORB RHYTHM (30-45%) ════
+    // Jump pad launches over a triple spike cluster
+    pad(x); x += CELL + 40;
+    spike(x); spike(x+CELL); spike(x+CELL*2); x += CELL*3 + 200;
+    // After pad-boosted jump, land here with room
+    spike(x); x += 360;
+    // Orb above height 3 — jump, hit orb mid-arc, land after next spike
+    orb(x + 60, 3); x += 340;
+    spike(x); x += 340;
+    // Orb over a 2-wide spike
+    orb(x + 90, 3); x += 300;
+    spike(x); spike(x+CELL); x += CELL + 360;
+
+    // ════ SECTION 4: TALL BLOCK WITH ORB (45-55%) ════
+    // Tall block, land on top
+    block(x, 2); x += CELL + 320;
+    spike(x); x += 340;
+    // Pillar to jump over
+    block(x, 3); x += CELL + 360;
+    // Orb helps cross a wide gap followed by spike
+    orb(x + 60, 3); x += 300;
+    spike(x); x += 380;
+
+    // ════ SECTION 5: SHIP MODE (55-75%) ════
+    shipPortal(x, true); x += 60;
+    // Ship corridor — careful spacing
+    // Each obstacle set with ≥200px between, corridor height ≥ 200px for a 42px ship
+    var shipStart = x;
+    var shipEnd = x + 2000;
+    var sx = x + 220;
+    // Floor spike, then top spike, then alternating
+    spike(sx);                  sx += 260;
+    spikeTop(sx);               sx += 260;
+    spike(sx);                  sx += 260;
+    spikeTop(sx);               sx += 260;
+    spike(sx); spikeTop(sx);    sx += 340;   // squeeze through gap
+    spike(sx);                  sx += 260;
+    spikeTop(sx);               sx += 260;
+    spike(sx);                  sx += 260;
+    shipPortal(shipEnd, false);
+    x = shipEnd + 240;
+
+    // ════ SECTION 6: CUBE FINALE (75-100%) ════
+    spike(x); x += 340;
+    // Orb-pad combo
+    orb(x + 60, 3); x += 300;
+    spike(x); x += 340;
+    // Final pad launch over 3-spike cluster
+    pad(x); x += CELL + 40;
+    spike(x); spike(x+CELL); spike(x+CELL*2); x += CELL*3 + 260;
+    // Two independent spikes
+    spike(x); x += 340;
+    spike(x); x += 360;
+    // Staircase with spike on top
+    block(x, 1); block(x+CELL, 2); x += CELL*2 + 320;
+    spike(x); x += 360;
+    // Final double spike
+    spike(x); spike(x+CELL); x += CELL + 400;
+
+    LEVEL_LENGTH = x + 200;
+  }
+
+  // --- Player ---
+  var player = {
+    x: 220, y: GROUND_Y - PLAYER_SIZE, vy: 0,
+    grounded: true, rot: 0, rotVel: 0,
+    mode: 'cube', gravityDir: 1,
+    alive: true, orbAvailable: null
+  };
+  var worldX = 0;
+  var attempts = parseInt(localStorage.getItem('aliDashAttempts') || '0', 10);
+  var running = false, dying = false;
+  var practiceMode = false;
+  var checkpoints = []; // [{ worldX, y }] in chronological order
+
+  function setAttempts(n) {
+    attempts = n;
+    attemptsEl.textContent = 'ATTEMPT ' + n;
+    localStorage.setItem('aliDashAttempts', String(n));
+  }
+
+  // --- Menu / views ---
+  function showView(name) {
+    menuView.style.display = name === 'menu' ? 'block' : 'none';
+    howView.style.display = name === 'how' ? 'block' : 'none';
+    deathView.style.display = name === 'death' ? 'block' : 'none';
+    winView.style.display = name === 'win' ? 'block' : 'none';
+    overlay.classList.remove('hidden');
+  }
+  function hideMenus() {
+    overlay.classList.add('hidden');
+  }
+
+  document.getElementById('btnPlay').addEventListener('click', function(){
+    practiceMode = false;
+    checkpoints = [];
+    startRun();
+  });
+  document.getElementById('btnPractice').addEventListener('click', function(){
+    practiceMode = true;
+    checkpoints = [];
+    startRun();
+  });
+  document.getElementById('btnHow').addEventListener('click', function(){ showView('how'); });
+  document.getElementById('btnBack1').addEventListener('click', function(){ showView('menu'); });
+  document.getElementById('btnRetry').addEventListener('click', function(){ startRun(); });
+  document.getElementById('btnMenu').addEventListener('click', function(){ checkpoints = []; showView('menu'); });
+  document.getElementById('btnAgain').addEventListener('click', function(){ startRun(); });
+  document.getElementById('btnMenu2').addEventListener('click', function(){ checkpoints = []; showView('menu'); });
+
+  function startRun() {
+    buildLevel();
+    // Reset obstacle "used" flags for new attempt
+    obstacles.forEach(function(o){ delete o._used; delete o._hit; });
+
+    // Starting position: either at last checkpoint (practice) or from the start
+    var spawnX = 0;
+    var spawnY = GROUND_Y - PLAYER_SIZE;
+    if (practiceMode && checkpoints.length > 0) {
+      var cp = checkpoints[checkpoints.length - 1];
+      spawnX = cp.worldX;
+      spawnY = cp.y;
+    }
+    worldX = spawnX;
+    player.x = 220;
+    player.y = spawnY;
+    player.vy = 0; player.grounded = true;
+    player.rot = 0; player.rotVel = 0;
+    player.mode = 'cube'; player.gravityDir = 1;
+    player.alive = true; player.orbAvailable = null;
+    // Apply obstacles already "passed" for checkpoint starts (mark ship-start/ship-end correctly)
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i];
+      if (o.x + (o.w || 0) < worldX) { o._used = true; o._hit = true; }
+      if (o.type === 'ship-start' && o.x < worldX) { player.mode = 'ship'; }
+      if (o.type === 'ship-end' && o.x < worldX) { player.mode = 'cube'; }
+    }
+    dying = false;
+    running = true;
+    setAttempts(attempts + 1);
+    modeBadge.classList.toggle('show', practiceMode);
+    hideMenus();
+  }
+
+  function die() {
+    if (dying) return;
+    dying = true;
+    running = false;
+    var pct = Math.min(100, (worldX / LEVEL_LENGTH) * 100);
+    if (pct > best) { best = pct; localStorage.setItem('aliDashBest', String(best)); refreshBest(); }
+    deathOv.classList.add('show');
+    spawnDeathSparks();
+    if (practiceMode) {
+      // Quick respawn
+      setTimeout(function(){
+        deathOv.classList.remove('show');
+        startRun();
+      }, 500);
+    } else {
+      setTimeout(function(){
+        deathOv.classList.remove('show');
+        deathPct.textContent = pct.toFixed(0) + '%';
+        showView('death');
+      }, 500);
+    }
+  }
+
+  function win() {
+    running = false;
+    best = 100;
+    localStorage.setItem('aliDashBest', '100');
+    refreshBest();
+    showView('win');
+  }
+
+  // --- Input ---
+  var holding = false;
+  function jumpPressed() {
+    if (!running) return;
+    holding = true;
+    if (player.mode === 'cube') {
+      if (!player.grounded && player.orbAvailable && !player.orbAvailable._used) {
+        player.vy = -JUMP * 1.05 * player.gravityDir;
+        player.rotVel = player.gravityDir * 10;
+        player.orbAvailable._used = true;
+        player.orbAvailable = null;
+        spawnTapSparks();
+        return;
+      }
+      if (player.grounded) {
+        player.vy = -JUMP * player.gravityDir;
+        player.grounded = false;
+        player.rotVel = player.gravityDir * 10;
+      }
+    }
+  }
+  function jumpReleased(){ holding = false; }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+      jumpPressed();
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      if (running) { running = false; showView('menu'); }
+    } else if (running && practiceMode && (e.key === 'z' || e.key === 'Z')) {
+      // Drop checkpoint
+      checkpoints.push({ worldX: worldX, y: player.y });
+      spawnCheckpointSparks();
+    } else if (running && practiceMode && (e.key === 'x' || e.key === 'X')) {
+      checkpoints.pop();
+    }
+  });
+  document.addEventListener('keyup', function(e){
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') jumpReleased();
+  });
+  canvas.addEventListener('mousedown', jumpPressed);
+  canvas.addEventListener('mouseup', jumpReleased);
+  canvas.addEventListener('touchstart', function(e){ jumpPressed(); e.preventDefault(); }, {passive:false});
+  canvas.addEventListener('touchend',   function(e){ jumpReleased(); e.preventDefault(); }, {passive:false});
+
+  // --- Particles ---
+  var sparks = [];
+  function spawnTapSparks() {
+    for (var i = 0; i < 10; i++) {
+      sparks.push({ x:player.x+PLAYER_SIZE/2, y:player.y+PLAYER_SIZE/2,
+        vx:(Math.random()-0.5)*360, vy:(Math.random()-0.5)*360,
+        life:0.4, maxLife:0.4, color:'#FFD700' });
+    }
+  }
+  function spawnDeathSparks() {
+    for (var i = 0; i < 28; i++) {
+      sparks.push({ x:player.x+PLAYER_SIZE/2, y:player.y+PLAYER_SIZE/2,
+        vx:(Math.random()-0.5)*600, vy:(Math.random()-0.5)*600 - 100,
+        life:0.7, maxLife:0.7, color:'#FF006E' });
+    }
+  }
+  function spawnCheckpointSparks() {
+    for (var i = 0; i < 16; i++) {
+      sparks.push({ x:player.x+PLAYER_SIZE/2, y:player.y+PLAYER_SIZE/2,
+        vx:(Math.random()-0.5)*200, vy:-Math.random()*260 - 40,
+        life:0.6, maxLife:0.6, color:'#2ecc71' });
+    }
+  }
+  function spawnTrail() {
+    if (player.mode === 'cube' && player.grounded) return;
+    sparks.push({ x:player.x+PLAYER_SIZE*0.15, y:player.y+PLAYER_SIZE*0.5+(Math.random()-0.5)*6,
+      vx:-120, vy:(Math.random()-0.5)*60,
+      life:0.32, maxLife:0.32, color:'#00FFFF', small:true });
+  }
+
+  // --- Collision helpers ---
+  function pointInTriangle(px, py, x1, y1, x2, y2, x3, y3) {
+    var d1 = (px-x2)*(y1-y2) - (x1-x2)*(py-y2);
+    var d2 = (px-x3)*(y2-y3) - (x2-x3)*(py-y3);
+    var d3 = (px-x1)*(y3-y1) - (x3-x1)*(py-y1);
+    var neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    var pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    return !(neg && pos);
+  }
+  function rectIntersect(r1, r2) {
+    return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x
+        && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+  }
+
+  // --- Update ---
+  function update(dt) {
+    worldX += SCROLL * dt;
+
+    // Portals
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i];
+      if (o.type === 'ship-start' && !o._hit && worldX + player.x + PLAYER_SIZE > o.x) {
+        o._hit = true;
+        player.mode = 'ship';
+      } else if (o.type === 'ship-end' && !o._hit && worldX + player.x + PLAYER_SIZE > o.x) {
+        o._hit = true;
+        player.mode = 'cube';
+        player.vy = 0;
+      }
+    }
+
+    // Physics
+    if (player.mode === 'cube') {
+      player.vy += GRAVITY * player.gravityDir * dt;
+      if (player.vy > 1800) player.vy = 1800;
+      if (player.vy < -1800) player.vy = -1800;
+    } else {
+      var thrust = holding ? -GRAVITY * 0.9 * player.gravityDir : GRAVITY * 0.9 * player.gravityDir;
+      player.vy += thrust * dt;
+      if (player.vy > 1100) player.vy = 1100;
+      if (player.vy < -1100) player.vy = -1100;
+    }
+    player.y += player.vy * dt;
+
+    // Ground/ceiling
+    if (player.y + PLAYER_SIZE > GROUND_Y) {
+      player.y = GROUND_Y - PLAYER_SIZE;
+      player.vy = 0;
+      if (!player.grounded) { player.rot = Math.round(player.rot/(Math.PI/2))*(Math.PI/2); player.rotVel = 0; }
+      player.grounded = true;
+    } else {
+      player.grounded = false;
+    }
+    if (player.mode === 'ship' && player.y < 20) { player.y = 20; player.vy = 0; }
+
+    // Cube rotation mid-air
+    if (player.mode === 'cube') {
+      if (!player.grounded) player.rot += player.rotVel * dt;
+    } else {
+      var tilt = Math.max(-0.6, Math.min(0.6, player.vy / 900));
+      player.rot = tilt;
+    }
+
+    if (Math.random() < 0.7) spawnTrail();
+
+    // Collision checks
+    var pRect = { x: worldX + player.x + 4, y: player.y + 4, w: PLAYER_SIZE - 8, h: PLAYER_SIZE - 8 };
+    player.orbAvailable = null;
+
+    for (var j = 0; j < obstacles.length; j++) {
+      var ob = obstacles[j];
+      if (ob.type === 'ship-start' || ob.type === 'ship-end') continue;
+      if (ob.x + ob.w < worldX - 100 || ob.x > worldX + W + 100) continue;
+
+      if (ob.type === 'spike') {
+        var tipX = ob.x + ob.w/2, tipY = ob.y;
+        var blX = ob.x + 6, blY = ob.y + ob.h;
+        var brX = ob.x + ob.w - 6, brY = ob.y + ob.h;
+        var pts = [
+          [pRect.x, pRect.y], [pRect.x + pRect.w, pRect.y],
+          [pRect.x, pRect.y + pRect.h], [pRect.x + pRect.w, pRect.y + pRect.h],
+          [pRect.x + pRect.w/2, pRect.y + pRect.h/2]
+        ];
+        for (var p = 0; p < pts.length; p++) {
+          if (pointInTriangle(pts[p][0], pts[p][1], tipX, tipY, blX, blY, brX, brY)) { die(); return; }
+        }
+      } else if (ob.type === 'spike-top') {
+        var tipX2 = ob.x + ob.w/2, tipY2 = ob.y + ob.h;
+        var tlX = ob.x + 6, tlY = ob.y;
+        var trX = ob.x + ob.w - 6, trY = ob.y;
+        var pts2 = [
+          [pRect.x, pRect.y], [pRect.x + pRect.w, pRect.y],
+          [pRect.x, pRect.y + pRect.h], [pRect.x + pRect.w, pRect.y + pRect.h],
+          [pRect.x + pRect.w/2, pRect.y + pRect.h/2]
+        ];
+        for (var p2 = 0; p2 < pts2.length; p2++) {
+          if (pointInTriangle(pts2[p2][0], pts2[p2][1], tipX2, tipY2, tlX, tlY, trX, trY)) { die(); return; }
+        }
+      } else if (ob.type === 'block') {
+        var blockRect = { x: ob.x, y: ob.y, w: ob.w, h: ob.h };
+        if (rectIntersect(pRect, blockRect)) {
+          if (player.mode === 'cube' && player.vy >= 0 && (pRect.y + pRect.h) - player.vy * dt <= ob.y + 8) {
+            // Land on top
+            player.y = ob.y - PLAYER_SIZE;
+            player.vy = 0;
+            if (!player.grounded) { player.rot = Math.round(player.rot/(Math.PI/2))*(Math.PI/2); player.rotVel = 0; }
+            player.grounded = true;
+          } else {
+            die(); return;
+          }
+        }
+      } else if (ob.type === 'orb') {
+        if (!ob._used) {
+          var dx = (pRect.x + pRect.w/2) - ob.cx;
+          var dy = (pRect.y + pRect.h/2) - ob.cy;
+          if (dx*dx + dy*dy < 60*60) player.orbAvailable = ob;
+        }
+      } else if (ob.type === 'pad') {
+        var padRect = { x: ob.x, y: ob.y, w: ob.w, h: ob.h };
+        if (rectIntersect(pRect, padRect) && !ob._used) {
+          player.vy = -JUMP * 1.6 * player.gravityDir;
+          player.grounded = false;
+          player.rotVel = player.gravityDir * 14;
+          ob._used = true;
+        }
+      }
+    }
+
+    if (worldX >= LEVEL_LENGTH - W * 0.6) {
+      win();
+    }
+
+    for (var s = sparks.length - 1; s >= 0; s--) {
+      var sp = sparks[s];
+      sp.x += sp.vx * dt; sp.y += sp.vy * dt;
+      if (!sp.small) sp.vy += 400 * dt;
+      sp.life -= dt;
+      if (sp.life <= 0) sparks.splice(s, 1);
+    }
+    for (var ss = 0; ss < sparks.length; ss++) if (sparks[ss].small) sparks[ss].x -= SCROLL * dt;
+
+    var pct = Math.min(100, (worldX / LEVEL_LENGTH) * 100);
+    pctBar.style.width = pct + '%';
+    pctText.textContent = pct.toFixed(0) + '%';
+  }
+
+  // --- Draw ---
+  function drawSpike(x, y, w, h, flipped) {
+    ctx.save();
+    ctx.shadowColor = '#FF006E'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#FF006E';
+    ctx.beginPath();
+    if (!flipped) {
+      ctx.moveTo(x + w/2, y);
+      ctx.lineTo(x + w, y + h);
+      ctx.lineTo(x, y + h);
+    } else {
+      ctx.moveTo(x + w/2, y + h);
+      ctx.lineTo(x + w, y);
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    var grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawBlock(x, y, w, h) {
+    ctx.save();
+    ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 10;
+    var grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, '#1a1a3a');
+    grad.addColorStop(1, '#0a0a20');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+  function drawOrb(cx, cy) {
+    var pulse = 0.8 + 0.2 * Math.sin(performance.now() / 200);
+    ctx.save();
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
+    ctx.fillStyle = 'rgba(255,215,0,0.25)';
+    ctx.beginPath(); ctx.arc(cx, cy, 30 * pulse, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath(); ctx.arc(cx, cy, 16, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+  function drawPad(x, y, w, h, used) {
+    ctx.save();
+    ctx.shadowColor = '#FF006E'; ctx.shadowBlur = used ? 4 : 14;
+    ctx.fillStyle = used ? '#551133' : '#FF006E';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(x + w/2 - 12, y + h - 2);
+    ctx.lineTo(x + w/2 + 12, y + h - 2);
+    ctx.lineTo(x + w/2, y - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawPortal(sx, isStart) {
+    ctx.save();
+    var color = isStart ? '#00FFFF' : '#FFD700';
+    ctx.shadowColor = color; ctx.shadowBlur = 24;
+    ctx.strokeStyle = color; ctx.lineWidth = 4;
+    for (var p = 0; p < 5; p++) {
+      ctx.globalAlpha = 1 - p * 0.18;
+      ctx.strokeRect(sx - 12 + p*3, 80 + p*4, 30, H - 160 - p*8);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff';
+    ctx.font = "bold 16px 'Russo One', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.fillText(isStart ? 'SHIP' : 'CUBE', sx + 3, H/2);
+    ctx.restore();
+  }
+  function drawPlayer() {
+    var cx = player.x + PLAYER_SIZE/2;
+    var cy = player.y + PLAYER_SIZE/2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(player.rot);
+    if (player.mode === 'cube') {
+      ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 18;
+      var grad = ctx.createLinearGradient(-PLAYER_SIZE/2, -PLAYER_SIZE/2, PLAYER_SIZE/2, PLAYER_SIZE/2);
+      grad.addColorStop(0, '#00FFFF');
+      grad.addColorStop(1, '#7C3AED');
+      ctx.fillStyle = grad;
+      ctx.fillRect(-PLAYER_SIZE/2, -PLAYER_SIZE/2, PLAYER_SIZE, PLAYER_SIZE);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.strokeRect(-PLAYER_SIZE/2, -PLAYER_SIZE/2, PLAYER_SIZE, PLAYER_SIZE);
+      ctx.shadowBlur = 0;
+      if (aliImg.complete && aliImg.naturalWidth) {
+        var fs = PLAYER_SIZE * 0.72;
+        ctx.save(); ctx.beginPath(); ctx.arc(0, 0, fs/2, 0, Math.PI*2); ctx.clip();
+        ctx.drawImage(aliImg, -fs/2, -fs/2, fs, fs); ctx.restore();
+      }
+    } else {
+      ctx.shadowColor = '#FF006E'; ctx.shadowBlur = 16;
+      ctx.fillStyle = '#FF006E';
+      ctx.beginPath();
+      ctx.moveTo(PLAYER_SIZE*0.6, 0);
+      ctx.lineTo(-PLAYER_SIZE*0.5, PLAYER_SIZE*0.45);
+      ctx.lineTo(-PLAYER_SIZE*0.3, 0);
+      ctx.lineTo(-PLAYER_SIZE*0.5, -PLAYER_SIZE*0.45);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.shadowBlur = 0;
+      if (aliImg.complete && aliImg.naturalWidth) {
+        var fs2 = PLAYER_SIZE * 0.55;
+        ctx.save(); ctx.beginPath(); ctx.arc(-PLAYER_SIZE*0.05, 0, fs2/2, 0, Math.PI*2); ctx.clip();
+        ctx.drawImage(aliImg, -PLAYER_SIZE*0.05 - fs2/2, -fs2/2, fs2, fs2); ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawCheckpointFlags() {
+    if (!practiceMode) return;
+    for (var i = 0; i < checkpoints.length; i++) {
+      var cp = checkpoints[i];
+      var sx = cp.worldX + 220 - worldX;   // show at spawn-relative position in world
+      if (sx < -20 || sx > W + 20) continue;
+      ctx.save();
+      ctx.shadowColor = '#2ecc71'; ctx.shadowBlur = 12;
+      ctx.fillStyle = '#2ecc71';
+      // Pole
+      ctx.fillRect(sx - 1, cp.y - 30, 2, 46);
+      // Flag
+      ctx.beginPath();
+      ctx.moveTo(sx, cp.y - 30);
+      ctx.lineTo(sx + 22, cp.y - 26);
+      ctx.lineTo(sx, cp.y - 18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function draw() {
+    var pct = Math.min(1, worldX / LEVEL_LENGTH);
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    var hue1 = Math.floor(260 + pct * 80);
+    var hue2 = Math.floor(200 + pct * 100);
+    g.addColorStop(0, 'hsl(' + hue1 + ', 60%, 12%)');
+    g.addColorStop(1, 'hsl(' + hue2 + ', 70%, 5%)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    var gridSize = 60;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    var offX = -worldX % gridSize;
+    for (var gx = offX; gx < W; gx += gridSize) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+    }
+    for (var gy = 0; gy < H; gy += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+
+    ctx.save();
+    ctx.shadowColor = '#00FFFF'; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#101024';
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    ctx.fillStyle = '#00FFFF';
+    ctx.fillRect(0, GROUND_Y, W, 3);
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowColor = '#FF006E'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#FF006E';
+    ctx.fillRect(0, 20, W, 2);
+    ctx.restore();
+
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i];
+      var sx = o.x - worldX;
+      if (sx + (o.w || 20) < -60 || sx > W + 60) continue;
+      if (o.type === 'spike') drawSpike(sx, o.y, o.w, o.h, false);
+      else if (o.type === 'spike-top') drawSpike(sx, o.y, o.w, o.h, true);
+      else if (o.type === 'block') drawBlock(sx, o.y, o.w, o.h);
+      else if (o.type === 'orb') { if (!o._used) drawOrb(sx + o.w/2, o.y + o.h/2); }
+      else if (o.type === 'pad') drawPad(sx, o.y, o.w, o.h, !!o._used);
+      else if (o.type === 'ship-start' || o.type === 'ship-end') drawPortal(sx, o.type === 'ship-start');
+    }
+
+    drawCheckpointFlags();
+
+    for (var s = 0; s < sparks.length; s++) {
+      var sp = sparks[s];
+      ctx.globalAlpha = Math.max(0, sp.life / sp.maxLife);
+      ctx.fillStyle = sp.color;
+      var sz = sp.small ? 3 : 5;
+      ctx.fillRect(sp.x - sz/2, sp.y - sz/2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+
+    drawPlayer();
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.032, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Start on menu
+  buildLevel();
+  showView('menu');
+  setAttempts(attempts);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

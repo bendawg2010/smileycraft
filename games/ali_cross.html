@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Cross</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h1 { font-family:'Russo One',sans-serif; color:#FFD700; font-size:2.2rem;
+       text-shadow:0 0 20px rgba(255,215,0,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  canvas { background:#0D0D1A; border:2px solid #FFD700; border-radius:10px;
+           box-shadow:0 0 30px rgba(255,215,0,0.25); max-width:100%; touch-action:none; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,#FFD700,var(--pink));
+         border:none; color:#111; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(255,215,0,0.3); margin-top:14px; font-weight:700;}
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:520px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI CROSS</h1>
+<div class="sub">Cross the road and river. Don't get hit.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>LIVES: <b id="lives">3</b></span>
+  <span>BEST: <b id="best">0</b></span>
+</div>
+<canvas id="c" width="520" height="600"></canvas>
+<button class="btn" id="start">PLAY</button>
+<div class="tip">Arrows / WASD / tap edges to move &bull; Stay on logs over water!</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var CELL = 40;
+  var COLS = W / CELL;
+  var ROWS = H / CELL;
+
+  var best = parseInt(localStorage.getItem('aliCrossBest') || '0', 10);
+  document.getElementById('best').textContent = best;
+
+  var player = { col: Math.floor(COLS/2), row: ROWS - 1, px: 0, py: 0, onLog: null };
+  var score = 0, lives = 3;
+  var running = false, gameOver = false;
+  var time = 0;
+
+  // Rows from top to bottom:
+  // 0 goal (safe)
+  // 1-4 water (logs left/right)
+  // 5 safe
+  // 6-10 road (cars left/right)
+  // 11-12 start safe
+  // 13 start row
+  var rowTypes = [];
+  var rowVels = []; // pixels per second; 0 = safe
+  var lanes = [];   // lane objects
+  function buildLanes() {
+    rowTypes = [];
+    rowVels = [];
+    lanes = [];
+    for (var r = 0; r < ROWS; r++) {
+      if (r === 0) { rowTypes.push('goal'); rowVels.push(0); lanes.push([]); continue; }
+      if (r === 5 || r === ROWS - 1 || r === ROWS - 2) { rowTypes.push('safe'); rowVels.push(0); lanes.push([]); continue; }
+      if (r >= 1 && r <= 4) {
+        // water rows with logs
+        rowTypes.push('water');
+        var vel = (r % 2 === 0 ? 1 : -1) * (70 + Math.random() * 40);
+        rowVels.push(vel);
+        var logs = [];
+        var lx = (vel > 0 ? -100 : W + 100);
+        var logW = 100 + Math.random() * 60;
+        for (var j = 0; j < 3; j++) {
+          logs.push({ x: j * (W / 3) + Math.random() * 40, w: logW });
+        }
+        lanes.push(logs);
+        continue;
+      }
+      // road rows
+      rowTypes.push('road');
+      var rv = (r % 2 === 0 ? 1 : -1) * (90 + Math.random() * 50);
+      rowVels.push(rv);
+      var cars = [];
+      for (var c = 0; c < 3; c++) {
+        cars.push({ x: c * (W / 3) + Math.random() * 50, w: 44 + Math.random() * 10 });
+      }
+      lanes.push(cars);
+    }
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (!running) return;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { move(0, -1); e.preventDefault(); }
+    else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { move(0, 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { move(-1, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { move(1, 0); e.preventDefault(); }
+  });
+  canvas.addEventListener('touchstart', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var tx = (e.touches[0].clientX - rect.left) * (W/rect.width);
+    var ty = (e.touches[0].clientY - rect.top) * (H/rect.height);
+    var px = player.col * CELL + CELL/2;
+    var py = player.row * CELL + CELL/2;
+    var dx = tx - px, dy = ty - py;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1, 0);
+    else move(0, dy > 0 ? 1 : -1);
+    e.preventDefault();
+  }, {passive:false});
+
+  function move(dx, dy) {
+    if (gameOver) return;
+    var nc = player.col + dx;
+    var nr = player.row + dy;
+    if (nc < 0 || nc >= COLS) return;
+    if (nr < 0 || nr >= ROWS) return;
+    player.col = nc;
+    player.row = nr;
+    player.onLog = null;
+    // Bonus for progress forward
+    if (nr < ROWS - 1 && dy < 0 && nr < (ROWS - 1 - scoreRows)) {
+      score += 5;
+      scoreRows++;
+      document.getElementById('score').textContent = score;
+    }
+    // Reached goal
+    if (nr === 0) {
+      score += 50;
+      document.getElementById('score').textContent = score;
+      respawn();
+    }
+  }
+  var scoreRows = 0;
+
+  function respawn() {
+    player.col = Math.floor(COLS/2);
+    player.row = ROWS - 1;
+    player.onLog = null;
+    scoreRows = 0;
+  }
+
+  function update(dt) {
+    time += dt;
+    // Smooth player visual position
+    var tx = player.col * CELL + CELL/2;
+    var ty = player.row * CELL + CELL/2;
+    player.px += (tx - player.px) * Math.min(1, dt * 16);
+    player.py += (ty - player.py) * Math.min(1, dt * 16);
+
+    // Move lanes
+    for (var r = 0; r < ROWS; r++) {
+      var vel = rowVels[r];
+      if (vel === 0) continue;
+      var items = lanes[r];
+      for (var i = 0; i < items.length; i++) {
+        items[i].x += vel * dt;
+        if (vel > 0 && items[i].x > W + 100) items[i].x = -items[i].w - 40;
+        if (vel < 0 && items[i].x + items[i].w < -100) items[i].x = W + 40;
+      }
+    }
+
+    // Water rows — player must be on a log
+    if (rowTypes[player.row] === 'water') {
+      var onLog = null;
+      var px = player.col * CELL + CELL/2;
+      var logs = lanes[player.row];
+      for (var j = 0; j < logs.length; j++) {
+        if (px >= logs[j].x && px <= logs[j].x + logs[j].w) { onLog = logs[j]; break; }
+      }
+      if (!onLog) {
+        // Drowned
+        loseLife();
+        return;
+      }
+      // Ride the log
+      var slide = rowVels[player.row] * dt;
+      player.px += slide;
+      // Convert px back to col if moved too far
+      var apparentCol = (player.px - CELL/2) / CELL;
+      if (player.px < 0 || player.px > W) { loseLife(); return; }
+      player.col = Math.round(apparentCol);
+    }
+
+    // Road row — check collisions
+    if (rowTypes[player.row] === 'road') {
+      var px2 = player.col * CELL + CELL/2;
+      var cars = lanes[player.row];
+      for (var k = 0; k < cars.length; k++) {
+        if (px2 + CELL*0.35 > cars[k].x && px2 - CELL*0.35 < cars[k].x + cars[k].w) {
+          loseLife();
+          return;
+        }
+      }
+    }
+  }
+
+  function loseLife() {
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    if (lives <= 0) {
+      running = false;
+      gameOver = true;
+      if (score > best) { best = score; localStorage.setItem('aliCrossBest', String(best)); }
+      document.getElementById('best').textContent = best;
+      document.getElementById('start').textContent = 'TRY AGAIN';
+    } else {
+      respawn();
+    }
+  }
+
+  function drawCar(c, y, leftward) {
+    ctx.save();
+    ctx.shadowColor = leftward ? '#FF006E' : '#FFD700';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = leftward ? '#FF006E' : '#FFD700';
+    var pad = 4;
+    ctx.fillRect(c.x, y + pad, c.w, CELL - pad*2);
+    // windshield
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(c.x + 8, y + pad + 4, c.w - 16, (CELL - pad*2) / 3);
+    // lights
+    ctx.fillStyle = '#fff';
+    if (leftward) {
+      ctx.fillRect(c.x, y + pad + 6, 3, 5);
+      ctx.fillRect(c.x, y + CELL - pad - 11, 3, 5);
+    } else {
+      ctx.fillRect(c.x + c.w - 3, y + pad + 6, 3, 5);
+      ctx.fillRect(c.x + c.w - 3, y + CELL - pad - 11, 3, 5);
+    }
+    ctx.restore();
+  }
+
+  function drawLog(l, y) {
+    ctx.save();
+    ctx.shadowColor = '#8B5A2B';
+    ctx.shadowBlur = 6;
+    var pad = 6;
+    var grad = ctx.createLinearGradient(0, y, 0, y + CELL);
+    grad.addColorStop(0, '#A06B2C');
+    grad.addColorStop(1, '#6B3A1B');
+    ctx.fillStyle = grad;
+    ctx.fillRect(l.x, y + pad, l.w, CELL - pad*2);
+    // Rings
+    ctx.strokeStyle = '#5B2A0B';
+    ctx.lineWidth = 1;
+    for (var r = 0; r < 4; r++) {
+      var rx = l.x + 10 + r * ((l.w - 20) / 3);
+      ctx.beginPath();
+      ctx.arc(rx, y + CELL/2, 5, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function draw() {
+    // Row backgrounds
+    for (var r = 0; r < ROWS; r++) {
+      var y = r * CELL;
+      var type = rowTypes[r];
+      if (type === 'water') ctx.fillStyle = '#1E88E5';
+      else if (type === 'road') ctx.fillStyle = '#202028';
+      else if (type === 'goal') ctx.fillStyle = '#2ecc71';
+      else ctx.fillStyle = '#1a3a1a'; // safe grass
+      ctx.fillRect(0, y, W, CELL);
+      if (type === 'road') {
+        // Dashed line
+        ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath();
+        ctx.moveTo(0, y + CELL/2);
+        ctx.lineTo(W, y + CELL/2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (type === 'water') {
+        // shimmering stripes
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        for (var s = 0; s < W; s += 30) {
+          ctx.fillRect(s + ((time * 30) % 30), y + CELL*0.75, 14, 2);
+        }
+      }
+      if (type === 'goal') {
+        ctx.fillStyle = '#fff';
+        ctx.font = "bold 14px 'Russo One', sans-serif";
+        ctx.textAlign = 'center';
+        ctx.fillText('★ GOAL ★', W/2, y + CELL/2 + 5);
+      }
+    }
+
+    // Entities
+    for (var r2 = 0; r2 < ROWS; r2++) {
+      if (rowTypes[r2] === 'road') {
+        var cars = lanes[r2];
+        for (var i = 0; i < cars.length; i++) drawCar(cars[i], r2 * CELL, rowVels[r2] < 0);
+      } else if (rowTypes[r2] === 'water') {
+        var logs = lanes[r2];
+        for (var j = 0; j < logs.length; j++) drawLog(logs[j], r2 * CELL);
+      }
+    }
+
+    // Player (Ali face)
+    var pr = CELL * 0.42;
+    ctx.save();
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(player.px, player.py, pr, 0, Math.PI*2);
+    ctx.fillStyle = '#00FFFF';
+    ctx.fill();
+    ctx.restore();
+    if (aliImg.complete && aliImg.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(player.px, player.py, pr - 1, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, player.px - pr, player.py - pr, pr*2, pr*2);
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(player.px, player.py, pr, 0, Math.PI*2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FFD700';
+      ctx.shadowColor = '#FFD700';
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 36px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 10);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.font = "bold 20px 'Russo One', sans-serif";
+      ctx.fillText('Score: ' + score, W/2, H/2 + 20);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.033, (t - lastTime) / 1000) || 0;
+    lastTime = t;
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    score = 0; lives = 3;
+    document.getElementById('score').textContent = 0;
+    document.getElementById('lives').textContent = 3;
+    buildLanes();
+    respawn();
+    player.px = player.col * CELL + CELL/2;
+    player.py = player.row * CELL + CELL/2;
+    gameOver = false; running = true;
+  }
+
+  document.getElementById('start').addEventListener('click', startGame);
+  buildLanes();
+  player.px = player.col * CELL + CELL/2;
+  player.py = player.row * CELL + CELL/2;
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

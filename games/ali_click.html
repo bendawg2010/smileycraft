@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Click</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 0%, rgba(0,255,255,0.08), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; }
+  .hud b { color:var(--cyan); }
+  .hud .time { color:var(--pink); }
+  .arena { position:relative; width:min(720px, 95vw); height:520px;
+           background:var(--panel); border:2px solid var(--cyan); border-radius:12px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); overflow:hidden; cursor:crosshair; }
+  .target { position:absolute; width:90px; height:90px; border-radius:50%;
+            background-image:url('/ali.jpg'); background-size:cover; background-position:center;
+            border:3px solid var(--cyan); box-shadow:0 0 18px rgba(0,255,255,0.6);
+            cursor:pointer; animation:appear 0.2s ease-out;
+            user-select:none; touch-action:manipulation; }
+  .target.gold { border-color:var(--gold); box-shadow:0 0 22px rgba(255,215,0,0.7); }
+  .target.small { width:60px; height:60px; border-color:var(--pink); box-shadow:0 0 16px rgba(255,0,110,0.7); }
+  .target.trap { border-color:#ff4444; filter:hue-rotate(180deg) saturate(1.5); box-shadow:0 0 20px rgba(255,68,68,0.7); }
+  @keyframes appear { 0%{transform:scale(0);} 100%{transform:scale(1);} }
+  .pop { position:absolute; pointer-events:none;
+         font-family:'Russo One',sans-serif; font-size:1.6rem; color:var(--cyan);
+         text-shadow:0 0 10px rgba(0,255,255,0.8); animation:floatUp 0.8s ease-out forwards; }
+  .pop.gold { color:var(--gold); }
+  .pop.trap { color:#ff4444; }
+  @keyframes floatUp { 0%{opacity:1;transform:translateY(0);} 100%{opacity:0;transform:translateY(-50px);} }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .overlay { position:absolute; inset:0; background:rgba(0,0,0,0.7); display:none;
+             align-items:center; justify-content:center; flex-direction:column; z-index:10; }
+  .overlay.show { display:flex; }
+  .overlay h2 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2rem;
+                text-shadow:0 0 20px rgba(0,255,255,0.6); margin-bottom:10px; }
+  .overlay p { color:#fff; margin:4px 0; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:500px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI CLICK</h1>
+<div class="sub">Click the Alis as fast as you can. Avoid the red ones.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>HITS: <b id="hits">0</b></span>
+  <span>ACCURACY: <b id="acc">100%</b></span>
+  <span class="time">TIME: <b id="time">30</b></span>
+</div>
+<div class="arena" id="arena">
+  <div class="overlay show" id="overlay">
+    <h2 id="overlayTitle">ALI CLICK</h2>
+    <p id="overlayMsg">30 seconds. Click every Ali that appears. Red = trap, gold = bonus.</p>
+    <button class="btn" id="start">START</button>
+  </div>
+</div>
+<div class="tip">Cyan = 1 pt &bull; Pink (small) = 2 pts &bull; Gold = 5 pts &bull; Red trap = -3 pts</div>
+
+<script>
+(function(){
+  var arena = document.getElementById('arena');
+  var overlay = document.getElementById('overlay');
+  var overlayTitle = document.getElementById('overlayTitle');
+  var overlayMsg = document.getElementById('overlayMsg');
+  var startBtn = document.getElementById('start');
+
+  var score = 0, hits = 0, clicks = 0, timeLeft = 30;
+  var running = false;
+  var spawnTimer = null, countdownTimer = null;
+  var active = [];
+
+  function updateHUD() {
+    document.getElementById('score').textContent = score;
+    document.getElementById('hits').textContent = hits;
+    var pct = clicks === 0 ? 100 : Math.round(hits / clicks * 100);
+    document.getElementById('acc').textContent = pct + '%';
+    document.getElementById('time').textContent = timeLeft;
+  }
+
+  function spawnTarget() {
+    if (!running) return;
+    var rect = arena.getBoundingClientRect();
+    var roll = Math.random();
+    var cls = 'target';
+    var points = 1;
+    var type = 'normal';
+    if (roll < 0.1) { cls += ' trap'; points = -3; type = 'trap'; }
+    else if (roll < 0.2) { cls += ' gold'; points = 5; type = 'gold'; }
+    else if (roll < 0.4) { cls += ' small'; points = 2; type = 'small'; }
+
+    var size = type === 'small' ? 60 : 90;
+    var pad = 10;
+    var maxX = rect.width - size - pad;
+    var maxY = rect.height - size - pad;
+    var x = pad + Math.random() * maxX;
+    var y = pad + Math.random() * maxY;
+
+    var el = document.createElement('div');
+    el.className = cls;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    var targetLife = type === 'small' ? 900 : 1200;
+    var expire = setTimeout(function(){
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+        // Missed non-trap counts as a miss
+        if (type !== 'trap') {
+          // no penalty; target just vanishes
+        }
+        active = active.filter(function(a){ return a.el !== el; });
+      }
+    }, targetLife);
+
+    el.addEventListener('pointerdown', function(e){
+      e.stopPropagation();
+      if (!running) return;
+      clearTimeout(expire);
+      clicks++;
+      if (type !== 'trap') { hits++; }
+      score += points;
+      if (score < 0) score = 0;
+      var p = document.createElement('div');
+      p.className = 'pop' + (type === 'gold' ? ' gold' : (type === 'trap' ? ' trap' : ''));
+      p.textContent = (points > 0 ? '+' : '') + points;
+      p.style.left = (x + size/2 - 14) + 'px';
+      p.style.top = (y + size/2 - 14) + 'px';
+      arena.appendChild(p);
+      setTimeout(function(){ if (p.parentNode) p.parentNode.removeChild(p); }, 800);
+      if (el.parentNode) el.parentNode.removeChild(el);
+      active = active.filter(function(a){ return a.el !== el; });
+      updateHUD();
+    });
+
+    arena.appendChild(el);
+    active.push({ el: el, timeout: expire });
+
+    var nextDelay = Math.max(250, 700 - (30 - timeLeft) * 15);
+    spawnTimer = setTimeout(spawnTarget, nextDelay + Math.random() * 250);
+  }
+
+  // Missed click (on arena background) as accuracy hit
+  arena.addEventListener('pointerdown', function(e){
+    if (!running) return;
+    if (e.target === arena) {
+      clicks++;
+      updateHUD();
+    }
+  });
+
+  function startGame() {
+    score = 0; hits = 0; clicks = 0; timeLeft = 30;
+    active.forEach(function(a){ clearTimeout(a.timeout); if (a.el.parentNode) a.el.parentNode.removeChild(a.el); });
+    active = [];
+    updateHUD();
+    overlay.classList.remove('show');
+    running = true;
+    spawnTimer = setTimeout(spawnTarget, 200);
+    countdownTimer = setInterval(function(){
+      timeLeft--;
+      updateHUD();
+      if (timeLeft <= 0) endGame();
+    }, 1000);
+  }
+
+  function endGame() {
+    running = false;
+    if (spawnTimer) clearTimeout(spawnTimer);
+    if (countdownTimer) clearInterval(countdownTimer);
+    active.forEach(function(a){ clearTimeout(a.timeout); if (a.el.parentNode) a.el.parentNode.removeChild(a.el); });
+    active = [];
+    overlayTitle.textContent = 'TIME UP';
+    overlayMsg.textContent = 'Score: ' + score + ' | Accuracy: ' + (clicks === 0 ? 100 : Math.round(hits/clicks*100)) + '%';
+    startBtn.textContent = 'PLAY AGAIN';
+    overlay.classList.add('show');
+  }
+
+  startBtn.addEventListener('click', startGame);
+})();
+</script>
+</body>
+</html>

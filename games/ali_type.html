@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Type</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; --gold:#FFD700; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 30%, rgba(0,255,255,0.08), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .stage { position:relative; width:min(760px, 96vw); height:520px; overflow:hidden;
+           background:var(--panel); border:2px solid var(--cyan); border-radius:12px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); }
+  .word { position:absolute; font-family:'JetBrains Mono',monospace; font-weight:700;
+          font-size:1.15rem; white-space:nowrap; padding:10px 18px 10px 50px;
+          border-radius:22px; background:rgba(20,20,40,0.9); border:2px solid var(--cyan);
+          box-shadow:0 0 10px rgba(0,255,255,0.3); color:#fff; pointer-events:none; }
+  .word::before { content:''; position:absolute; left:6px; top:50%; transform:translateY(-50%);
+                  width:32px; height:32px; border-radius:50%;
+                  background:url('/ali.jpg') center/cover no-repeat;
+                  border:2px solid var(--cyan); }
+  .word .typed { color:var(--cyan); }
+  .input-wrap { position:absolute; left:0; right:0; bottom:14px; text-align:center; }
+  .input-wrap input { width:min(420px,80%); padding:12px 16px; font-family:'JetBrains Mono',monospace;
+                      font-size:1.1rem; border:2px solid var(--cyan); border-radius:8px;
+                      background:rgba(13,13,26,0.9); color:var(--cyan); outline:none;
+                      box-shadow:0 0 15px rgba(0,255,255,0.3); text-align:center; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; max-width:500px; }
+  .danger-line { position:absolute; left:0; right:0; bottom:62px; height:2px;
+                 background:repeating-linear-gradient(90deg, rgba(255,68,68,0.6) 0 10px, transparent 10px 20px);
+                 box-shadow:0 0 8px rgba(255,68,68,0.5); }
+  .overlay { position:absolute; inset:0; background:rgba(0,0,0,0.75); display:none;
+             align-items:center; justify-content:center; flex-direction:column; z-index:5; }
+  .overlay.show { display:flex; }
+  .overlay h2 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2rem;
+                text-shadow:0 0 18px rgba(0,255,255,0.6); margin-bottom:8px; }
+  .overlay p { margin:2px 0; color:#fff; }
+  .overlay .stat { color:var(--cyan); font-weight:700; }
+  .overlay .stat.gold { color:#FFD700; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI TYPE</h1>
+<div class="sub">Type the Ali-words before they hit the bottom.</div>
+<div class="hud">
+  <span>SCORE: <b id="score">0</b></span>
+  <span>WPM: <b id="wpm">0</b></span>
+  <span>LIVES: <b id="lives">3</b></span>
+  <span>LEVEL: <b id="level">1</b></span>
+</div>
+<div class="stage" id="stage">
+  <div class="danger-line"></div>
+  <div class="overlay show" id="overlay">
+    <h2 id="overlayTitle">ALI TYPE</h2>
+    <p id="overlayMsg">Words will fall from the top. Type them and press Enter/Space.</p>
+    <button class="btn" id="start">START</button>
+  </div>
+  <div class="input-wrap">
+    <input type="text" id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type here when the game starts">
+  </div>
+</div>
+<div class="tip">Enter / Space submits the word &bull; Words speed up as you progress</div>
+
+<script>
+(function(){
+  var stage = document.getElementById('stage');
+  var input = document.getElementById('input');
+  var overlay = document.getElementById('overlay');
+  var overlayTitle = document.getElementById('overlayTitle');
+  var overlayMsg = document.getElementById('overlayMsg');
+  var startBtn = document.getElementById('start');
+
+  var WORDS = [
+    'ali','craft','jump','run','mine','block','pick','stone','wood','dash',
+    'alicraft','brick','score','catch','blast','sweep','cross','pong','tower','snake',
+    'flappy','memory','tetris','click','combo','power','neon','cyan','pink','purple',
+    'arcade','level','bonus','multi','laser','slow','life','shield','spark','rocket',
+    'forest','mountain','river','cave','diamond','iron','coal','gold','torch','apple',
+    'craftsman','explorer','miner','jumper','runner','warrior','ninja','wizard','knight','hero'
+  ];
+
+  var words = [];
+  var score = 0, lives = 3, level = 1, wpm = 0;
+  var running = false, gameOver = false;
+  var spawnTimer = 0, startTime = 0, totalChars = 0;
+
+  function baseSpeed() { return 30 + level * 8; }
+
+  function spawnWord() {
+    var text = WORDS[Math.floor(Math.random() * WORDS.length)];
+    var el = document.createElement('div');
+    el.className = 'word';
+    var typedSpan = document.createElement('span');
+    typedSpan.className = 'typed';
+    el.appendChild(typedSpan);
+    var restNode = document.createTextNode(text);
+    el.appendChild(restNode);
+    var w = { text: text, el: el, typedSpan: typedSpan, restNode: restNode, x: 0, y: -30,
+              vy: baseSpeed() * (0.8 + Math.random() * 0.5), prefix: 0 };
+    stage.appendChild(el);
+    var rect = stage.getBoundingClientRect();
+    var ww = el.offsetWidth || 120;
+    w.x = Math.random() * (rect.width - ww - 10) + 5;
+    el.style.left = w.x + 'px';
+    el.style.top = w.y + 'px';
+    words.push(w);
+  }
+
+  function updateHUD() {
+    document.getElementById('score').textContent = score;
+    document.getElementById('lives').textContent = lives;
+    document.getElementById('level').textContent = level;
+    document.getElementById('wpm').textContent = wpm;
+  }
+
+  function computeWPM() {
+    if (!startTime) return 0;
+    var minutes = (performance.now() - startTime) / 60000;
+    if (minutes <= 0) return 0;
+    return Math.round((totalChars / 5) / minutes);
+  }
+
+  function checkInput() {
+    var text = input.value;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (text.length > 0 && w.text.indexOf(text) === 0) {
+        w.typedSpan.textContent = text;
+        w.restNode.nodeValue = w.text.slice(text.length);
+      } else {
+        w.typedSpan.textContent = '';
+        w.restNode.nodeValue = w.text;
+      }
+    }
+  }
+
+  function submitWord() {
+    var text = input.value.trim();
+    if (!text) return;
+    var idx = -1;
+    for (var i = 0; i < words.length; i++) {
+      if (words[i].text === text) { idx = i; break; }
+    }
+    if (idx >= 0) {
+      var w = words[idx];
+      var rect = stage.getBoundingClientRect();
+      var pct = 1 - (w.y / (rect.height - 80));
+      var pts = Math.max(5, Math.floor(text.length * 5 * (0.5 + pct)));
+      score += pts;
+      totalChars += text.length + 1;
+      wpm = computeWPM();
+      stage.removeChild(w.el);
+      words.splice(idx, 1);
+      updateHUD();
+      flashStage('#00FFFF');
+    } else {
+      score = Math.max(0, score - 2);
+      updateHUD();
+      flashStage('#FF4444');
+    }
+    input.value = '';
+    checkInput();
+  }
+
+  function flashStage(color) {
+    stage.style.boxShadow = '0 0 40px ' + color + ', 0 0 70px ' + color;
+    setTimeout(function(){ stage.style.boxShadow = ''; }, 150);
+  }
+
+  input.addEventListener('input', checkInput);
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      submitWord();
+    }
+  });
+
+  function updateLoop() {
+    if (!running) { requestAnimationFrame(updateLoop); return; }
+    var now = performance.now();
+    if (!updateLoop._last) updateLoop._last = now;
+    var dt = Math.min(0.05, (now - updateLoop._last) / 1000);
+    updateLoop._last = now;
+
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnWord();
+      spawnTimer = Math.max(0.45, 1.4 - level * 0.08);
+    }
+
+    var rect = stage.getBoundingClientRect();
+    var dangerY = rect.height - 80;
+    for (var i = words.length - 1; i >= 0; i--) {
+      var w = words[i];
+      w.y += w.vy * dt;
+      w.el.style.top = w.y + 'px';
+      if (w.y >= dangerY) {
+        stage.removeChild(w.el);
+        words.splice(i, 1);
+        lives--;
+        updateHUD();
+        flashStage('#FF4444');
+        if (lives <= 0) endGame();
+      }
+    }
+
+    var nextLevel = 1 + Math.floor(score / 180);
+    if (nextLevel > level) { level = nextLevel; updateHUD(); }
+    wpm = computeWPM();
+    document.getElementById('wpm').textContent = wpm;
+    requestAnimationFrame(updateLoop);
+  }
+
+  function startGame() {
+    score = 0; lives = 3; level = 1; wpm = 0; totalChars = 0;
+    for (var i = 0; i < words.length; i++) stage.removeChild(words[i].el);
+    words = [];
+    spawnTimer = 0;
+    gameOver = false;
+    overlay.classList.remove('show');
+    input.value = '';
+    input.disabled = false;
+    setTimeout(function(){ input.focus(); }, 50);
+    startTime = performance.now();
+    running = true;
+    updateHUD();
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+    input.disabled = true;
+    overlayTitle.textContent = 'GAME OVER';
+    while (overlayMsg.firstChild) overlayMsg.removeChild(overlayMsg.firstChild);
+    overlayMsg.appendChild(document.createTextNode('Score: '));
+    var sp1 = document.createElement('b'); sp1.className = 'stat'; sp1.textContent = String(score);
+    overlayMsg.appendChild(sp1);
+    overlayMsg.appendChild(document.createTextNode('   WPM: '));
+    var sp2 = document.createElement('b'); sp2.className = 'stat gold'; sp2.textContent = String(wpm);
+    overlayMsg.appendChild(sp2);
+    startBtn.textContent = 'PLAY AGAIN';
+    overlay.classList.add('show');
+  }
+
+  startBtn.addEventListener('click', startGame);
+  requestAnimationFrame(updateLoop);
+})();
+</script>
+</body>
+</html>

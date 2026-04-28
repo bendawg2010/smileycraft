@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Maze</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 50% 50%, rgba(0,255,255,0.06), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--cyan); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(0,255,255,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .hud { display:flex; gap:24px; margin-bottom:10px; font-weight:700; }
+  .hud b { color:var(--cyan); }
+  canvas { background:var(--panel); border:2px solid var(--cyan); border-radius:10px;
+           box-shadow:0 0 30px rgba(0,255,255,0.25); max-width:100%; touch-action:none; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--cyan),var(--purple));
+         border:none; color:#fff; padding:10px 26px; border-radius:8px; font-size:1rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(0,255,255,0.3); margin-top:14px; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI MAZE</h1>
+<div class="sub">Roll Ali through the maze to the glowing goal.</div>
+<div class="hud">
+  <span>LEVEL: <b id="level">1</b></span>
+  <span>TIME: <b id="time">0.0s</b></span>
+  <span>BEST: <b id="best">-</b></span>
+</div>
+<canvas id="c" width="600" height="600"></canvas>
+<button class="btn" id="start">START</button>
+<div class="tip">Arrow keys / WASD to move &bull; On mobile, swipe to roll</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var level = 1;
+  var best = JSON.parse(localStorage.getItem('aliMazeBest') || '{}');
+  updateBestDisplay();
+
+  var GRID = 11; // starts 11x11; grows with level
+  var CELL = W / GRID;
+  var maze = []; // 2D array, true = wall
+  var player = { x:1, y:1, px:0, py:0 };
+  var goal = { x: GRID-2, y: GRID-2 };
+  var running = false, won = false;
+  var startTime = 0, currentTime = 0;
+
+  function updateBestDisplay() {
+    var b = best[String(level)];
+    document.getElementById('best').textContent = b ? b.toFixed(1) + 's' : '-';
+  }
+
+  // Recursive backtracker maze gen
+  function genMaze(size) {
+    var m = [];
+    for (var y=0;y<size;y++){ m[y]=[]; for (var x=0;x<size;x++) m[y][x] = true; }
+    var stack = [[1,1]];
+    m[1][1] = false;
+    while (stack.length) {
+      var cur = stack[stack.length-1];
+      var cx = cur[0], cy = cur[1];
+      var dirs = [[2,0],[-2,0],[0,2],[0,-2]];
+      // shuffle
+      for (var i=dirs.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=dirs[i]; dirs[i]=dirs[j]; dirs[j]=t; }
+      var moved = false;
+      for (var d=0;d<4;d++){
+        var nx = cx + dirs[d][0], ny = cy + dirs[d][1];
+        if (nx>0 && ny>0 && nx<size-1 && ny<size-1 && m[ny][nx]) {
+          m[ny][nx] = false;
+          m[cy + dirs[d][1]/2][cx + dirs[d][0]/2] = false;
+          stack.push([nx, ny]);
+          moved = true;
+          break;
+        }
+      }
+      if (!moved) stack.pop();
+    }
+    // Ensure goal cell is open
+    m[size-2][size-2] = false;
+    return m;
+  }
+
+  function startLevel() {
+    GRID = 11 + Math.min(level - 1, 6) * 2; // 11,13,15,...,23
+    if (GRID % 2 === 0) GRID++;
+    CELL = W / GRID;
+    maze = genMaze(GRID);
+    player.x = 1; player.y = 1;
+    player.px = player.x * CELL + CELL/2;
+    player.py = player.y * CELL + CELL/2;
+    goal.x = GRID - 2; goal.y = GRID - 2;
+    startTime = performance.now();
+    won = false;
+    running = true;
+    updateBestDisplay();
+    document.getElementById('start').style.display = 'none';
+  }
+
+  function canMove(nx, ny) {
+    return nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && !maze[ny][nx];
+  }
+
+  function step(dx, dy) {
+    if (!running) return;
+    var nx = player.x + dx, ny = player.y + dy;
+    if (canMove(nx, ny)) {
+      player.x = nx; player.y = ny;
+      if (player.x === goal.x && player.y === goal.y) {
+        var t = (performance.now() - startTime) / 1000;
+        running = false;
+        won = true;
+        var key = String(level);
+        if (!best[key] || t < best[key]) {
+          best[key] = t;
+          localStorage.setItem('aliMazeBest', JSON.stringify(best));
+        }
+        setTimeout(function(){
+          level++;
+          document.getElementById('level').textContent = level;
+          startLevel();
+        }, 800);
+      }
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+
+    // walls
+    for (var y=0;y<GRID;y++){
+      for (var x=0;x<GRID;x++){
+        if (maze[y] && maze[y][x]) {
+          ctx.fillStyle = '#1a1a3a';
+          ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+          ctx.strokeStyle = 'rgba(0,255,255,0.2)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x*CELL + 0.5, y*CELL + 0.5, CELL - 1, CELL - 1);
+        }
+      }
+    }
+
+    // goal
+    var pulse = 0.6 + 0.4 * Math.sin(performance.now()/200);
+    ctx.save();
+    ctx.shadowColor = '#FF006E';
+    ctx.shadowBlur = 20 * pulse;
+    ctx.fillStyle = 'rgba(255,0,110,' + (0.3 + 0.3*pulse) + ')';
+    ctx.fillRect(goal.x*CELL + 4, goal.y*CELL + 4, CELL - 8, CELL - 8);
+    ctx.strokeStyle = '#FF006E';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(goal.x*CELL + 4, goal.y*CELL + 4, CELL - 8, CELL - 8);
+    ctx.restore();
+    ctx.fillStyle = '#FF006E';
+    ctx.font = 'bold 16px Russo One';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('★', goal.x*CELL + CELL/2, goal.y*CELL + CELL/2);
+
+    // Smooth player position
+    var tx = player.x * CELL + CELL/2;
+    var ty = player.y * CELL + CELL/2;
+    player.px += (tx - player.px) * 0.35;
+    player.py += (ty - player.py) * 0.35;
+
+    // Ali ball
+    var pr = CELL * 0.4;
+    ctx.save();
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(player.px, player.py, pr, 0, Math.PI*2);
+    ctx.fillStyle = '#00FFFF';
+    ctx.fill();
+    ctx.restore();
+    if (aliImg.complete && aliImg.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(player.px, player.py, pr - 2, 0, Math.PI*2);
+      ctx.clip();
+      ctx.drawImage(aliImg, player.px - pr, player.py - pr, pr*2, pr*2);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(player.px, player.py, pr - 1, 0, Math.PI*2);
+      ctx.strokeStyle = '#00FFFF';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Timer
+    if (running) {
+      currentTime = (performance.now() - startTime) / 1000;
+      document.getElementById('time').textContent = currentTime.toFixed(1) + 's';
+    }
+
+    if (won) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#00FFFF';
+      ctx.shadowColor = '#00FFFF';
+      ctx.shadowBlur = 20;
+      ctx.font = 'bold 36px Russo One';
+      ctx.textAlign = 'center';
+      ctx.fillText('LEVEL CLEAR', W/2, H/2);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function loop(){ draw(); requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown', function(e){
+    var k = e.key;
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') { step(0, -1); e.preventDefault(); }
+    else if (k === 'ArrowDown' || k === 's' || k === 'S') { step(0, 1); e.preventDefault(); }
+    else if (k === 'ArrowLeft' || k === 'a' || k === 'A') { step(-1, 0); e.preventDefault(); }
+    else if (k === 'ArrowRight' || k === 'd' || k === 'D') { step(1, 0); e.preventDefault(); }
+  });
+
+  // Swipe
+  var sx=0, sy=0;
+  canvas.addEventListener('touchstart', function(e){
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, {passive:true});
+  canvas.addEventListener('touchend', function(e){
+    var dx = e.changedTouches[0].clientX - sx;
+    var dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
+    if (Math.abs(dx) > Math.abs(dy)) step(dx > 0 ? 1 : -1, 0);
+    else step(0, dy > 0 ? 1 : -1);
+  }, {passive:true});
+
+  document.getElementById('start').addEventListener('click', function(){ level = 1; document.getElementById('level').textContent = 1; startLevel(); });
+
+  maze = genMaze(GRID);
+  loop();
+})();
+</script>
+</body>
+</html>

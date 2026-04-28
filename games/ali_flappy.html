@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ALI BIRD - Flappy Ali</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0D0D1A;
+    overflow: hidden;
+    font-family: 'Chakra Petch', sans-serif;
+    color: #fff;
+    height: 100vh; width: 100vw;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  a.back-link {
+    position: fixed; top: 12px; left: 16px; z-index: 100;
+    color: #00FFFF; font-family: 'Chakra Petch', sans-serif; font-size: 0.85rem;
+    text-decoration: none; opacity: 0.7; transition: opacity 0.2s;
+  }
+  a.back-link:hover { opacity: 1; text-shadow: 0 0 8px #00FFFF; }
+
+  canvas {
+    display: block;
+    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(0,255,255,0.15), 0 0 60px rgba(255,0,110,0.1);
+    image-rendering: auto;
+    touch-action: none;
+  }
+
+  #overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(13,13,26,0.92);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    transition: opacity 0.3s;
+    pointer-events: auto;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .title {
+    font-family: 'Russo One', sans-serif;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #00FFFF, #FF006E);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(0 0 20px rgba(0,255,255,0.5)) drop-shadow(0 0 40px rgba(255,0,110,0.3));
+    margin-bottom: 8px;
+    animation: titlePulse 2s ease-in-out infinite alternate;
+  }
+  @keyframes titlePulse {
+    0% { filter: drop-shadow(0 0 20px rgba(0,255,255,0.5)) drop-shadow(0 0 40px rgba(255,0,110,0.3)); }
+    100% { filter: drop-shadow(0 0 30px rgba(0,255,255,0.8)) drop-shadow(0 0 60px rgba(255,0,110,0.5)); }
+  }
+
+  .subtitle {
+    font-size: clamp(0.75rem, 2.5vw, 1rem);
+    color: #888; margin-bottom: 24px;
+    text-align: center; padding: 0 20px;
+  }
+
+  .score-display {
+    font-family: 'Russo One', sans-serif;
+    font-size: clamp(1.5rem, 5vw, 2.5rem);
+    color: #00FFFF;
+    text-shadow: 0 0 12px #00FFFF;
+    margin-bottom: 6px;
+  }
+
+  .high-score {
+    font-size: clamp(0.8rem, 2vw, 1rem);
+    color: #FF006E;
+    text-shadow: 0 0 8px #FF006E;
+    margin-bottom: 20px;
+  }
+
+  .death-msg {
+    font-size: clamp(0.85rem, 2.5vw, 1.1rem);
+    color: #FF006E;
+    text-align: center;
+    max-width: 320px;
+    margin-bottom: 24px;
+    padding: 0 16px;
+    font-style: italic;
+    text-shadow: 0 0 10px rgba(255,0,110,0.5);
+  }
+
+  .milestone-msg {
+    font-size: clamp(0.85rem, 2.5vw, 1.1rem);
+    color: #00FFFF;
+    text-align: center;
+    margin-bottom: 16px;
+    text-shadow: 0 0 10px rgba(0,255,255,0.5);
+  }
+
+  .btn {
+    font-family: 'Russo One', sans-serif;
+    font-size: clamp(0.9rem, 3vw, 1.2rem);
+    padding: 12px 36px;
+    border: 2px solid #00FFFF;
+    background: transparent;
+    color: #00FFFF;
+    border-radius: 6px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    margin-bottom: 12px;
+  }
+  .btn:hover, .btn:active {
+    background: rgba(0,255,255,0.15);
+    box-shadow: 0 0 20px rgba(0,255,255,0.4);
+    transform: scale(1.05);
+  }
+
+  .ali-preview {
+    width: clamp(60px, 15vw, 100px);
+    height: clamp(60px, 15vw, 100px);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #00FFFF;
+    box-shadow: 0 0 20px rgba(0,255,255,0.5);
+    margin-bottom: 16px;
+    animation: previewBounce 1.2s ease-in-out infinite;
+  }
+  @keyframes previewBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+  }
+
+  .loading-text {
+    color: #555; font-size: 0.9rem; margin-top: 12px;
+  }
+
+  #toast {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 200; font-family: 'Russo One', sans-serif;
+    font-size: clamp(0.9rem, 3vw, 1.3rem);
+    color: #00FFFF; text-shadow: 0 0 12px #00FFFF;
+    opacity: 0; transition: opacity 0.3s;
+    text-align: center; padding: 0 16px;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<a class="back-link" href="../index.html">&larr; Back to AliCraft</a>
+
+<canvas id="game"></canvas>
+
+<div id="overlay">
+  <img id="previewFace" class="ali-preview" style="display:none" alt="Ali">
+  <div class="title">ALI BIRD</div>
+  <div class="subtitle" id="subText">Tap to Flap (Ali can barely do this)</div>
+  <div class="high-score" id="overlayHigh"></div>
+  <div class="death-msg" id="deathMsg" style="display:none"></div>
+  <div class="milestone-msg" id="milestoneMsg" style="display:none"></div>
+  <div class="score-display" id="overlayScore" style="display:none"></div>
+  <button class="btn" id="startBtn">START</button>
+  <div class="loading-text" id="loadingText">Loading Ali's face...</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ───── CONFIG ───── */
+const GRAVITY        = 0.58;   // stronger than normal (~0.48)
+const FLAP_POWER     = -7.2;   // weaker than normal (~-8.5)
+const PIPE_GAP       = 170;    // generous gap
+const PIPE_WIDTH     = 60;
+const PIPE_SPEED_INIT= 2.8;
+const PIPE_SPEED_INC = 0.04;   // per point
+const PIPE_SPACING   = 220;
+const BIRD_RADIUS    = 22;
+const GROUND_HEIGHT  = 50;
+const MAX_VEL        = 12;
+
+const CYAN   = '#00FFFF';
+const PINK   = '#FF006E';
+const BG     = '#0D0D1A';
+
+/* ───── DEATH MESSAGES ───── */
+const deathMsgs = [
+  "Ali couldn't even fly in a video game",
+  "23-minute flight time",
+  "Ali has been grounded... literally",
+  "Even birds are better athletes than Ali",
+  "Ali's vertical is still 0 inches",
+  "Gravity hits different when you skip leg day",
+  "Ali tried to flap. Ali failed.",
+  "Ali's wingspan: 0 ft 0 in",
+  "The pipes didn't move. Ali just fell.",
+  "Ali got rejected by gravity itself",
+  "This is why Ali was last pick in gym class",
+  "Ali makes a brick look aerodynamic"
+];
+
+/* ───── CANVAS SETUP ───── */
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  const maxW = Math.min(window.innerWidth - 20, 420);
+  const maxH = Math.min(window.innerHeight - 40, 700);
+  const ratio = Math.min(maxW / 420, maxH / 700);
+  W = Math.floor(420 * ratio);
+  H = Math.floor(700 * ratio);
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (state === 'idle') drawIdle(); });
+
+/* ───── IMAGE LOADING ───── */
+let aliImg = null;
+const previewEl    = document.getElementById('previewFace');
+const loadingEl    = document.getElementById('loadingText');
+
+(async function loadAliImage() {
+  try {
+    const resp = await fetch('../index.html');
+    const text = await resp.text();
+    // Extract the first base64 image from the imgs array
+    const match = text.match(/const\s+imgs\s*=\s*\[\s*"(data:image\/[^"]+)"/);
+    if (match) {
+      const src = match[1];
+      aliImg = new Image();
+      aliImg.onload = () => {
+        previewEl.src = src;
+        previewEl.style.display = 'block';
+        loadingEl.style.display = 'none';
+        drawIdle();
+      };
+      aliImg.onerror = () => { useFallback(); };
+      aliImg.src = src;
+    } else {
+      useFallback();
+    }
+  } catch(e) {
+    useFallback();
+  }
+})();
+
+function useFallback() {
+  // Draw a cartoon Ali face on an offscreen canvas
+  const oc = document.createElement('canvas');
+  oc.width = 80; oc.height = 80;
+  const ox = oc.getContext('2d');
+  ox.fillStyle = '#D2956A';
+  ox.beginPath(); ox.arc(40,40,38,0,Math.PI*2); ox.fill();
+  ox.fillStyle = '#111';
+  ox.beginPath(); ox.arc(28,32,5,0,Math.PI*2); ox.fill();
+  ox.beginPath(); ox.arc(52,32,5,0,Math.PI*2); ox.fill();
+  ox.strokeStyle = '#111'; ox.lineWidth = 2.5;
+  ox.beginPath(); ox.arc(40,46,10,0.1*Math.PI,0.9*Math.PI); ox.stroke();
+  ox.fillStyle = '#222';
+  ox.fillRect(18,10,44,8); // hair
+  aliImg = new Image();
+  aliImg.src = oc.toDataURL();
+  previewEl.src = aliImg.src;
+  previewEl.style.display = 'block';
+  loadingEl.style.display = 'none';
+  drawIdle();
+}
+
+/* ───── GAME STATE ───── */
+let state = 'idle'; // idle | playing | dead
+let bird, pipes, score, pipeSpeed, frameCount, groundX;
+let highScore = parseInt(localStorage.getItem('ali_flappy_high') || '0');
+
+const overlayEl    = document.getElementById('overlay');
+const overlayScore = document.getElementById('overlayScore');
+const overlayHigh  = document.getElementById('overlayHigh');
+const deathMsgEl   = document.getElementById('deathMsg');
+const milestoneEl  = document.getElementById('milestoneMsg');
+const subTextEl    = document.getElementById('subText');
+const startBtnEl   = document.getElementById('startBtn');
+const toastEl      = document.getElementById('toast');
+
+function showOverlay() { overlayEl.classList.remove('hidden'); }
+function hideOverlay() { overlayEl.classList.add('hidden'); }
+
+function updateHighDisplay() {
+  overlayHigh.textContent = highScore > 0 ? `HIGH SCORE: ${highScore}` : '';
+}
+
+/* ───── BIRD ───── */
+function createBird() {
+  return {
+    x: W * 0.28,
+    y: H * 0.45,
+    vel: 0,
+    rotation: 0,
+    flapFrame: 0
+  };
+}
+
+function flapBird() {
+  if (state !== 'playing') return;
+  bird.vel = FLAP_POWER * (H / 700); // scale flap to canvas size
+  bird.flapFrame = 8;
+}
+
+/* ───── PIPES (gym equipment themed) ───── */
+function createPipe(x) {
+  const minTop = 60 * (H / 700);
+  const maxTop = H - GROUND_HEIGHT * (H / 700) - PIPE_GAP * (H / 700) - minTop;
+  const topH = minTop + Math.random() * maxTop;
+  return {
+    x: x,
+    topH: topH,
+    scored: false,
+    type: Math.random() < 0.5 ? 'barbell' : 'hurdle'
+  };
+}
+
+/* ───── DRAWING ───── */
+function drawBg() {
+  // Cyberpunk gradient sky
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0D0D1A');
+  grad.addColorStop(0.3, '#12102A');
+  grad.addColorStop(0.6, '#1A0F2E');
+  grad.addColorStop(0.85, '#0D0D1A');
+  grad.addColorStop(1, '#0A0A12');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  const starSeed = 42;
+  for (let i = 0; i < 40; i++) {
+    const sx = ((i * 137 + starSeed) % W);
+    const sy = ((i * 97 + starSeed * 3) % (H * 0.6));
+    const sr = (i % 3 === 0) ? 1.5 : 0.8;
+    ctx.fillStyle = (i % 5 === 0) ? 'rgba(0,255,255,0.6)' : 'rgba(255,255,255,0.4)';
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Distant buildings
+  ctx.fillStyle = '#0F0F22';
+  const bldgs = [0.15,0.3,0.08,0.25,0.35,0.18,0.28,0.12,0.32,0.2,0.38,0.14,0.22];
+  const bw = W / bldgs.length;
+  const groundY = H - GROUND_HEIGHT * (H / 700);
+  bldgs.forEach((h, i) => {
+    const bh = h * H * 0.4;
+    ctx.fillRect(i * bw, groundY - bh, bw - 2, bh);
+    // Window lights
+    ctx.fillStyle = (i % 3 === 0) ? 'rgba(0,255,255,0.12)' : 'rgba(255,0,110,0.08)';
+    for (let wy = groundY - bh + 8; wy < groundY - 4; wy += 14) {
+      for (let wx = i * bw + 4; wx < (i + 1) * bw - 6; wx += 10) {
+        if (Math.random() > 0.4) ctx.fillRect(wx, wy, 4, 6);
+      }
+    }
+    ctx.fillStyle = '#0F0F22';
+  });
+}
+
+function drawGround() {
+  const gH = GROUND_HEIGHT * (H / 700);
+  const gY = H - gH;
+  ctx.fillStyle = '#1A1A2E';
+  ctx.fillRect(0, gY, W, gH);
+  // Ground line with neon
+  ctx.strokeStyle = CYAN;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = CYAN;
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(0, gY); ctx.lineTo(W, gY);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Scrolling ground marks
+  ctx.strokeStyle = 'rgba(0,255,255,0.15)';
+  ctx.lineWidth = 1;
+  const gx = groundX || 0;
+  for (let x = -gx % 30; x < W; x += 30) {
+    ctx.beginPath();
+    ctx.moveTo(x, gY + 10); ctx.lineTo(x + 15, gY + 10);
+    ctx.stroke();
+  }
+}
+
+function drawPipe(pipe) {
+  const scale = H / 700;
+  const pw = PIPE_WIDTH * (W / 420);
+  const gap = PIPE_GAP * scale;
+  const gY = H - GROUND_HEIGHT * scale;
+  const topH = pipe.topH;
+  const botY = topH + gap;
+  const botH = gY - botY;
+  const isBarbell = pipe.type === 'barbell';
+
+  // Pipe glow
+  ctx.shadowColor = isBarbell ? PINK : CYAN;
+  ctx.shadowBlur = 15;
+
+  // Top pipe
+  const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + pw, 0);
+  if (isBarbell) {
+    topGrad.addColorStop(0, '#8B004A');
+    topGrad.addColorStop(0.3, '#FF006E');
+    topGrad.addColorStop(0.7, '#FF006E');
+    topGrad.addColorStop(1, '#8B004A');
+  } else {
+    topGrad.addColorStop(0, '#005F5F');
+    topGrad.addColorStop(0.3, '#00CCCC');
+    topGrad.addColorStop(0.7, '#00CCCC');
+    topGrad.addColorStop(1, '#005F5F');
+  }
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(pipe.x, 0, pw, topH);
+
+  // Top cap (barbell weight / hurdle bar)
+  const capH = 16 * scale;
+  ctx.fillStyle = isBarbell ? '#FF3388' : '#00FFFF';
+  ctx.fillRect(pipe.x - 6, topH - capH, pw + 12, capH);
+  // Extra barbell detail
+  if (isBarbell) {
+    ctx.fillStyle = '#CC0055';
+    ctx.fillRect(pipe.x - 10, topH - capH + 2, 8, capH - 4);
+    ctx.fillRect(pipe.x + pw + 2, topH - capH + 2, 8, capH - 4);
+  }
+
+  // Bottom pipe
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(pipe.x, botY, pw, botH);
+
+  // Bottom cap
+  ctx.fillStyle = isBarbell ? '#FF3388' : '#00FFFF';
+  ctx.fillRect(pipe.x - 6, botY, pw + 12, capH);
+  if (isBarbell) {
+    ctx.fillStyle = '#CC0055';
+    ctx.fillRect(pipe.x - 10, botY + 2, 8, capH - 4);
+    ctx.fillRect(pipe.x + pw + 2, botY + 2, 8, capH - 4);
+  }
+
+  // Edge glow lines
+  ctx.strokeStyle = isBarbell ? 'rgba(255,0,110,0.6)' : 'rgba(0,255,255,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pipe.x, 0); ctx.lineTo(pipe.x, topH);
+  ctx.moveTo(pipe.x + pw, 0); ctx.lineTo(pipe.x + pw, topH);
+  ctx.moveTo(pipe.x, botY); ctx.lineTo(pipe.x, gY);
+  ctx.moveTo(pipe.x + pw, botY); ctx.lineTo(pipe.x + pw, gY);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+}
+
+function drawBird() {
+  if (!aliImg) return;
+  const r = BIRD_RADIUS * (H / 700);
+  const x = bird.x;
+  const y = bird.y;
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Rotation based on velocity (Ali makes funny faces as he falls)
+  const targetRot = Math.min(Math.max(bird.vel * 4, -30), 70);
+  bird.rotation += (targetRot - bird.rotation) * 0.15;
+  ctx.rotate(bird.rotation * Math.PI / 180);
+
+  // Glow ring
+  ctx.shadowColor = CYAN;
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = CYAN;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Clip circle and draw image
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Slight scale wobble on flap
+  const flapScale = bird.flapFrame > 0 ? 1 + bird.flapFrame * 0.008 : 1;
+  ctx.drawImage(aliImg, -r * flapScale, -r * flapScale, r * 2 * flapScale, r * 2 * flapScale);
+
+  ctx.restore();
+
+  // Trail particles (tiny)
+  if (state === 'playing') {
+    for (let i = 0; i < 2; i++) {
+      const px = x - r - Math.random() * 10;
+      const py = y + (Math.random() - 0.5) * r;
+      ctx.fillStyle = `rgba(0,255,255,${0.3 + Math.random() * 0.3})`;
+      ctx.fillRect(px, py, 2, 2);
+    }
+  }
+}
+
+function drawScore() {
+  if (state !== 'playing') return;
+  const size = Math.floor(36 * (H / 700));
+  ctx.font = `${size}px 'Russo One', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = CYAN;
+  ctx.shadowBlur = 16;
+  ctx.fillText(score, W / 2, 50 * (H / 700));
+  ctx.shadowBlur = 0;
+}
+
+function drawIdle() {
+  drawBg();
+  drawGround();
+  if (aliImg) {
+    // Draw Ali bobbing in center
+    const r = BIRD_RADIUS * (H / 700);
+    const x = W * 0.5;
+    const y = H * 0.5 + Math.sin(Date.now() / 300) * 10;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.shadowColor = CYAN; ctx.shadowBlur = 12;
+    ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r + 3, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(aliImg, -r, -r, r * 2, r * 2);
+    ctx.restore();
+  }
+}
+
+/* ───── GAME LOGIC ───── */
+function startGame() {
+  bird = createBird();
+  pipes = [];
+  score = 0;
+  pipeSpeed = PIPE_SPEED_INIT * (W / 420);
+  frameCount = 0;
+  groundX = 0;
+  state = 'playing';
+  hideOverlay();
+
+  // Spawn initial pipe
+  pipes.push(createPipe(W + 80));
+}
+
+function updateGame() {
+  if (state !== 'playing') return;
+  const scale = H / 700;
+  const wScale = W / 420;
+
+  frameCount++;
+  groundX += pipeSpeed;
+
+  // Bird physics
+  bird.vel += GRAVITY * scale;
+  if (bird.vel > MAX_VEL * scale) bird.vel = MAX_VEL * scale;
+  bird.y += bird.vel;
+  if (bird.flapFrame > 0) bird.flapFrame--;
+
+  // Pipes
+  const pw = PIPE_WIDTH * wScale;
+  const gap = PIPE_GAP * scale;
+  const gY = H - GROUND_HEIGHT * scale;
+  const r = BIRD_RADIUS * scale;
+
+  // Move pipes
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    pipes[i].x -= pipeSpeed;
+    if (pipes[i].x + pw + 12 < 0) {
+      pipes.splice(i, 1);
+      continue;
+    }
+
+    // Score
+    if (!pipes[i].scored && pipes[i].x + pw < bird.x) {
+      pipes[i].scored = true;
+      score++;
+      pipeSpeed = (PIPE_SPEED_INIT + score * PIPE_SPEED_INC) * wScale;
+
+      // Milestone toast
+      if (score > 0 && score % 10 === 0) {
+        showToast("Ali is actually doing something athletic!");
+      }
+    }
+  }
+
+  // Spawn new pipes
+  const lastPipe = pipes[pipes.length - 1];
+  if (!lastPipe || lastPipe.x < W - PIPE_SPACING * wScale) {
+    pipes.push(createPipe(W + 20));
+  }
+
+  // Collision detection
+  let dead = false;
+
+  // Ground / ceiling
+  if (bird.y + r > gY || bird.y - r < 0) {
+    dead = true;
+  }
+
+  // Pipe collision
+  for (const pipe of pipes) {
+    const pLeft = pipe.x - 6; // account for cap overhang
+    const pRight = pipe.x + pw + 6;
+    if (bird.x + r > pLeft && bird.x - r < pRight) {
+      if (bird.y - r < pipe.topH || bird.y + r > pipe.topH + gap) {
+        dead = true;
+        break;
+      }
+    }
+  }
+
+  if (dead) die();
+}
+
+function die() {
+  state = 'dead';
+
+  // Update high score
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('ali_flappy_high', String(highScore));
+  }
+
+  // Show death overlay
+  setTimeout(() => {
+    showOverlay();
+    overlayScore.style.display = 'block';
+    overlayScore.textContent = `SCORE: ${score}`;
+    updateHighDisplay();
+
+    // Pick death message
+    const msg = score === 0
+      ? "Classic Ali."
+      : deathMsgs[Math.floor(Math.random() * deathMsgs.length)];
+    deathMsgEl.textContent = `"${msg}"`;
+    deathMsgEl.style.display = 'block';
+
+    milestoneEl.style.display = 'none';
+    subTextEl.textContent = 'Ali demands a rematch';
+    startBtnEl.textContent = 'TRY AGAIN';
+    document.querySelector('.title').textContent = 'WASTED';
+  }, 400);
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+/* ───── GAME LOOP ───── */
+function gameLoop() {
+  updateGame();
+  drawBg();
+
+  // Draw pipes
+  for (const pipe of pipes) drawPipe(pipe);
+
+  drawGround();
+  drawBird();
+  drawScore();
+
+  requestAnimationFrame(gameLoop);
+}
+
+/* ───── INPUT ───── */
+function handleInput(e) {
+  if (e) e.preventDefault();
+  if (state === 'playing') {
+    flapBird();
+  }
+}
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    handleInput();
+  }
+});
+
+// Click / Touch on canvas
+canvas.addEventListener('mousedown', handleInput);
+canvas.addEventListener('touchstart', handleInput, { passive: false });
+
+// Start / Restart button
+startBtnEl.addEventListener('click', () => {
+  deathMsgEl.style.display = 'none';
+  overlayScore.style.display = 'none';
+  milestoneEl.style.display = 'none';
+  document.querySelector('.title').textContent = 'ALI BIRD';
+  subTextEl.textContent = 'Tap to Flap (Ali can barely do this)';
+  startBtnEl.textContent = 'START';
+  startGame();
+});
+
+// Also allow space/tap to restart from death screen
+document.addEventListener('keydown', (e) => {
+  if (state === 'dead' && (e.code === 'Space' || e.code === 'Enter')) {
+    e.preventDefault();
+    startBtnEl.click();
+  }
+});
+
+/* ───── INIT ───── */
+updateHighDisplay();
+drawIdle();
+gameLoop();
+</script>
+</body>
+</html>

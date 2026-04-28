@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Tetris</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  *{box-sizing:border-box;}
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 70% 20%, rgba(124,58,237,0.08), transparent 50%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--purple); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(124,58,237,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+  .wrap { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
+  canvas { background:var(--panel); border:2px solid var(--purple); border-radius:8px;
+           box-shadow:0 0 25px rgba(124,58,237,0.3); }
+  .side { display:flex; flex-direction:column; gap:12px; min-width:140px; }
+  .stat { background:var(--panel); border:1px solid var(--cyan); border-radius:8px; padding:8px 12px;
+          font-family:'Russo One',sans-serif; }
+  .stat .label { font-size:0.7rem; color:var(--muted); letter-spacing:1px; }
+  .stat .value { font-size:1.4rem; color:var(--cyan); }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--purple),var(--pink));
+         border:none; color:#fff; padding:10px 22px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(124,58,237,0.3); }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .tip { color:var(--muted); font-size:0.78rem; margin-top:14px; text-align:center; max-width:460px; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI TETRIS</h1>
+<div class="sub">Every block is Ali. Clear lines. Don't top out.</div>
+<div class="wrap">
+  <canvas id="c" width="320" height="640"></canvas>
+  <div class="side">
+    <div class="stat"><div class="label">SCORE</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">LINES</div><div class="value" id="lines">0</div></div>
+    <div class="stat"><div class="label">LEVEL</div><div class="value" id="level">1</div></div>
+    <div class="stat"><div class="label">NEXT</div><canvas id="next" width="120" height="120" style="display:block;margin-top:4px;"></canvas></div>
+    <button class="btn" id="start">START</button>
+  </div>
+</div>
+<div class="tip">← → move &bull; ↑ rotate &bull; ↓ soft drop &bull; SPACE hard drop &bull; P pause</div>
+
+<script>
+(function(){
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var nextCanvas = document.getElementById('next');
+  var nctx = nextCanvas.getContext('2d');
+
+  var COLS = 10, ROWS = 20, CELL = 32;
+  var W = canvas.width, H = canvas.height;
+
+  var aliImg = new Image();
+  aliImg.src = '/ali.jpg';
+
+  var SHAPES = {
+    I: { blocks:[[0,1],[1,1],[2,1],[3,1]], color:'#00FFFF', hue:180 },
+    O: { blocks:[[0,0],[1,0],[0,1],[1,1]], color:'#FFD700', hue:50 },
+    T: { blocks:[[0,1],[1,1],[2,1],[1,0]], color:'#7C3AED', hue:270 },
+    S: { blocks:[[1,0],[2,0],[0,1],[1,1]], color:'#2ecc71', hue:140 },
+    Z: { blocks:[[0,0],[1,0],[1,1],[2,1]], color:'#FF006E', hue:340 },
+    J: { blocks:[[0,0],[0,1],[1,1],[2,1]], color:'#3498db', hue:210 },
+    L: { blocks:[[2,0],[0,1],[1,1],[2,1]], color:'#e67e22', hue:30 }
+  };
+  var KEYS = Object.keys(SHAPES);
+
+  var grid = []; // grid[y][x] = null or {color, hue}
+  var current = null, next = null;
+  var dropTimer = 0, dropInterval = 1.0;
+  var score = 0, lines = 0, level = 1;
+  var running = false, paused = false, gameOver = false;
+
+  function emptyGrid() {
+    var g = [];
+    for (var y=0;y<ROWS;y++){ g[y]=[]; for (var x=0;x<COLS;x++) g[y][x]=null; }
+    return g;
+  }
+
+  function newPiece() {
+    var k = KEYS[Math.floor(Math.random()*KEYS.length)];
+    var s = SHAPES[k];
+    var blocks = s.blocks.map(function(b){ return [b[0], b[1]]; });
+    return {
+      type: k,
+      blocks: blocks,
+      color: s.color,
+      hue: s.hue,
+      x: Math.floor((COLS - 4)/2),
+      y: 0
+    };
+  }
+
+  function collides(p, ox, oy, blocks) {
+    blocks = blocks || p.blocks;
+    for (var i=0;i<blocks.length;i++){
+      var bx = p.x + blocks[i][0] + ox;
+      var by = p.y + blocks[i][1] + oy;
+      if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+      if (by >= 0 && grid[by][bx]) return true;
+    }
+    return false;
+  }
+
+  function merge(p) {
+    for (var i=0;i<p.blocks.length;i++){
+      var bx = p.x + p.blocks[i][0], by = p.y + p.blocks[i][1];
+      if (by >= 0) grid[by][bx] = { color: p.color, hue: p.hue };
+    }
+  }
+
+  function rotateBlocks(blocks) {
+    // rotate clockwise around center (1.5, 1.5) for non-I pieces; works ok for all
+    return blocks.map(function(b){
+      var x = b[0], y = b[1];
+      return [3 - y, x];
+    });
+  }
+
+  function clearLines() {
+    var cleared = 0;
+    for (var y = ROWS - 1; y >= 0; y--) {
+      var full = true;
+      for (var x = 0; x < COLS; x++) if (!grid[y][x]) { full = false; break; }
+      if (full) {
+        grid.splice(y, 1);
+        var empty = []; for (var i=0;i<COLS;i++) empty.push(null);
+        grid.unshift(empty);
+        cleared++;
+        y++;
+      }
+    }
+    if (cleared > 0) {
+      var scoreVals = [0, 100, 300, 500, 800];
+      score += scoreVals[cleared] * level;
+      lines += cleared;
+      level = 1 + Math.floor(lines / 10);
+      dropInterval = Math.max(0.1, 1.0 - (level - 1) * 0.08);
+      updateHUD();
+    }
+  }
+
+  function updateHUD() {
+    document.getElementById('score').textContent = score;
+    document.getElementById('lines').textContent = lines;
+    document.getElementById('level').textContent = level;
+  }
+
+  function spawn() {
+    current = next || newPiece();
+    next = newPiece();
+    drawNext();
+    if (collides(current, 0, 0)) {
+      running = false;
+      gameOver = true;
+      document.getElementById('start').textContent = 'TRY AGAIN';
+    }
+  }
+
+  function move(dx) { if (!collides(current, dx, 0)) current.x += dx; }
+  function softDrop() {
+    if (!collides(current, 0, 1)) { current.y++; score += 1; updateHUD(); }
+    else { merge(current); clearLines(); spawn(); }
+  }
+  function hardDrop() {
+    var dist = 0;
+    while (!collides(current, 0, 1)) { current.y++; dist++; }
+    score += dist * 2; updateHUD();
+    merge(current); clearLines(); spawn();
+  }
+  function rotate() {
+    var rotated = rotateBlocks(current.blocks);
+    if (!collides(current, 0, 0, rotated)) current.blocks = rotated;
+    else if (!collides(current, -1, 0, rotated)) { current.x--; current.blocks = rotated; }
+    else if (!collides(current, 1, 0, rotated)) { current.x++; current.blocks = rotated; }
+  }
+
+  function drawCell(c, x, y, color, hue, size) {
+    size = size || CELL;
+    c.save();
+    c.shadowColor = color;
+    c.shadowBlur = 8;
+    var grad = c.createLinearGradient(x, y, x + size, y + size);
+    grad.addColorStop(0, 'hsl(' + hue + ',60%,25%)');
+    grad.addColorStop(1, 'hsl(' + hue + ',70%,15%)');
+    c.fillStyle = grad;
+    c.fillRect(x + 1, y + 1, size - 2, size - 2);
+    c.strokeStyle = color;
+    c.lineWidth = 1;
+    c.strokeRect(x + 1, y + 1, size - 2, size - 2);
+    c.restore();
+    if (aliImg.complete && aliImg.naturalWidth) {
+      var fs = size - 8;
+      c.save();
+      c.beginPath();
+      c.arc(x + size/2, y + size/2, fs/2, 0, Math.PI*2);
+      c.clip();
+      c.drawImage(aliImg, x + size/2 - fs/2, y + size/2 - fs/2, fs, fs);
+      c.restore();
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+    // grid lines
+    ctx.strokeStyle = 'rgba(124,58,237,0.08)';
+    ctx.lineWidth = 1;
+    for (var x=0;x<=COLS;x++){ ctx.beginPath(); ctx.moveTo(x*CELL, 0); ctx.lineTo(x*CELL, H); ctx.stroke(); }
+    for (var y=0;y<=ROWS;y++){ ctx.beginPath(); ctx.moveTo(0, y*CELL); ctx.lineTo(W, y*CELL); ctx.stroke(); }
+    // settled blocks
+    for (var yy=0;yy<ROWS;yy++){
+      for (var xx=0;xx<COLS;xx++){
+        var g = grid[yy][xx];
+        if (g) drawCell(ctx, xx*CELL, yy*CELL, g.color, g.hue);
+      }
+    }
+    // ghost (preview bottom)
+    if (current) {
+      var ghostOffset = 0;
+      while (!collides(current, 0, ghostOffset + 1)) ghostOffset++;
+      ctx.globalAlpha = 0.25;
+      for (var i=0;i<current.blocks.length;i++){
+        var b = current.blocks[i];
+        var gx = (current.x + b[0]) * CELL;
+        var gy = (current.y + b[1] + ghostOffset) * CELL;
+        ctx.fillStyle = current.color;
+        ctx.fillRect(gx + 3, gy + 3, CELL - 6, CELL - 6);
+      }
+      ctx.globalAlpha = 1;
+      // current piece
+      for (var j=0;j<current.blocks.length;j++){
+        var bb = current.blocks[j];
+        drawCell(ctx, (current.x + bb[0]) * CELL, (current.y + bb[1]) * CELL, current.color, current.hue);
+      }
+    }
+
+    if (paused) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#00FFFF';
+      ctx.font = "bold 28px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', W/2, H/2);
+    }
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#FF006E';
+      ctx.shadowColor = '#FF006E';
+      ctx.shadowBlur = 20;
+      ctx.font = "bold 28px 'Russo One', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 10);
+      ctx.font = "bold 18px 'Russo One', sans-serif";
+      ctx.fillText('Score: ' + score, W/2, H/2 + 20);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function drawNext() {
+    nctx.fillStyle = '#141428';
+    nctx.fillRect(0, 0, 120, 120);
+    if (!next) return;
+    var cs = 24;
+    var minX = Math.min.apply(null, next.blocks.map(function(b){return b[0];}));
+    var maxX = Math.max.apply(null, next.blocks.map(function(b){return b[0];}));
+    var minY = Math.min.apply(null, next.blocks.map(function(b){return b[1];}));
+    var maxY = Math.max.apply(null, next.blocks.map(function(b){return b[1];}));
+    var ox = (120 - (maxX - minX + 1) * cs) / 2 - minX * cs;
+    var oy = (120 - (maxY - minY + 1) * cs) / 2 - minY * cs;
+    for (var i=0;i<next.blocks.length;i++){
+      var b = next.blocks[i];
+      drawCell(nctx, ox + b[0] * cs, oy + b[1] * cs, next.color, next.hue, cs);
+    }
+  }
+
+  var lastTime = 0;
+  function loop(t) {
+    var dt = Math.min(0.05, (t - lastTime) / 1000);
+    lastTime = t;
+    if (running && !paused && !gameOver) {
+      dropTimer += dt;
+      if (dropTimer >= dropInterval) { dropTimer = 0; softDrop(); }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    grid = emptyGrid();
+    score = 0; lines = 0; level = 1; dropInterval = 1.0;
+    gameOver = false; paused = false;
+    next = newPiece();
+    spawn();
+    running = true;
+    updateHUD();
+    document.getElementById('start').style.display = 'none';
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (!running || gameOver) return;
+    if (e.key === 'p' || e.key === 'P') { paused = !paused; return; }
+    if (paused) return;
+    if (e.key === 'ArrowLeft') { move(-1); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { move(1); e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { softDrop(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { rotate(); e.preventDefault(); }
+    else if (e.key === ' ') { hardDrop(); e.preventDefault(); }
+  });
+
+  document.getElementById('start').addEventListener('click', startGame);
+
+  grid = emptyGrid();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ali Memory</title>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0D0D1A; --panel:#141428; --cyan:#00FFFF; --pink:#FF006E; --purple:#7C3AED; --muted:#8a8aa8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:#fff; font-family:'Chakra Petch',sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:20px;
+         background-image: radial-gradient(circle at 30% 10%, rgba(255,0,110,0.06), transparent 40%),
+                           radial-gradient(circle at 70% 90%, rgba(0,255,255,0.06), transparent 40%); }
+  h1 { font-family:'Russo One',sans-serif; color:var(--pink); font-size:2.2rem;
+       text-shadow:0 0 20px rgba(255,0,110,0.6); margin:8px 0 4px; letter-spacing:2px; }
+  .sub { color:var(--muted); font-size:0.9rem; margin-bottom:14px; text-align:center; }
+  .hud { display:flex; gap:24px; margin-bottom:14px; font-weight:700; font-size:1rem; }
+  .hud b { color:var(--cyan); }
+  .board { display:grid; gap:10px; max-width:700px; width:100%; }
+  .card { aspect-ratio:1; position:relative; cursor:pointer;
+          perspective: 800px; }
+  .card-inner { position:absolute; inset:0; transition:transform 0.5s cubic-bezier(0.4,0,0.2,1);
+                transform-style:preserve-3d; }
+  .card.flipped .card-inner { transform:rotateY(180deg); }
+  .card.matched .card-inner { transform:rotateY(180deg) scale(0.95); }
+  .card-face { position:absolute; inset:0; backface-visibility:hidden;
+               border-radius:10px; display:flex; align-items:center; justify-content:center;
+               font-family:'Russo One',sans-serif; overflow:hidden; }
+  .card-back { background:linear-gradient(135deg,var(--panel),#1f1f3a);
+               border:2px solid var(--purple); color:var(--purple);
+               font-size:2.2rem; box-shadow:0 0 15px rgba(124,58,237,0.3);
+               background-image:
+                 radial-gradient(circle at 30% 30%, rgba(255,0,110,0.15), transparent 40%),
+                 radial-gradient(circle at 70% 70%, rgba(0,255,255,0.15), transparent 40%); }
+  .card-front { transform:rotateY(180deg); background:var(--panel);
+                border:2px solid var(--cyan); box-shadow:0 0 15px rgba(0,255,255,0.3);
+                flex-direction:column; padding:6px; }
+  .card.matched .card-front { border-color:#2ecc71; box-shadow:0 0 20px rgba(46,204,113,0.6); }
+  .card-img { width:90%; aspect-ratio:1; border-radius:50%;
+              background:url('/ali.jpg') center/cover no-repeat;
+              border:2px solid rgba(255,255,255,0.3); }
+  .card-label { font-size:0.7rem; color:var(--cyan); margin-top:4px;
+                font-family:'Russo One',sans-serif; letter-spacing:1px; }
+  .card.matched .card-label { color:#2ecc71; }
+  .controls { margin-top:18px; display:flex; gap:10px; }
+  .btn { font-family:'Russo One',sans-serif; background:linear-gradient(135deg,var(--pink),var(--purple));
+         border:none; color:#fff; padding:10px 28px; border-radius:8px; font-size:0.95rem;
+         letter-spacing:1px; cursor:pointer; box-shadow:0 0 15px rgba(255,0,110,0.3); }
+  .btn:hover { transform:translateY(-2px); box-shadow:0 0 25px rgba(255,0,110,0.5); }
+  .btn.secondary { background:var(--panel); border:1px solid var(--cyan); color:var(--cyan); box-shadow:none; }
+  .back { position:fixed; top:12px; left:12px; background:var(--panel); border:1px solid var(--cyan);
+          color:var(--cyan); padding:6px 12px; border-radius:6px; text-decoration:none;
+          font-family:'Russo One',sans-serif; font-size:0.85rem; }
+  .back:hover { background:var(--cyan); color:var(--bg); }
+  .win { margin-top:16px; font-family:'Russo One',sans-serif; color:#2ecc71;
+         font-size:1.3rem; text-align:center; text-shadow:0 0 20px rgba(46,204,113,0.5); display:none; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← BACK</a>
+<h1>ALI MEMORY</h1>
+<div class="sub">Match the pairs of Ali faces. Every card hides an Ali.</div>
+<div class="hud">
+  <span>MOVES: <b id="moves">0</b></span>
+  <span>MATCHES: <b id="matches">0/8</b></span>
+  <span>TIME: <b id="time">0s</b></span>
+</div>
+<div class="board" id="board"></div>
+<div class="win" id="winMsg"></div>
+<div class="controls">
+  <button class="btn" id="reset">NEW GAME</button>
+  <select id="difficulty" class="btn secondary" style="padding:10px;">
+    <option value="6" selected>MEDIUM (8 pairs)</option>
+    <option value="8">HARD (10 pairs)</option>
+  </select>
+</div>
+
+<script>
+(function(){
+  var LABELS = ['ALI 1','ALI 2','ALI 3','ALI 4','ALI 5','ALI 6','ALI 7','ALI 8','ALI 9','ALI A'];
+  var board = document.getElementById('board');
+  var movesEl = document.getElementById('moves');
+  var matchEl = document.getElementById('matches');
+  var timeEl = document.getElementById('time');
+  var winEl = document.getElementById('winMsg');
+  var resetBtn = document.getElementById('reset');
+  var diffSel = document.getElementById('difficulty');
+
+  var flipped=[], matched=0, moves=0, pairs=8, locked=false;
+  var startTime=0, timerInterval=null;
+
+  function updateHUD() {
+    movesEl.textContent = moves;
+    matchEl.textContent = matched + '/' + pairs;
+  }
+
+  function startTimer() {
+    startTime = Date.now();
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(function(){
+      var s = Math.floor((Date.now()-startTime)/1000);
+      timeEl.textContent = s + 's';
+    }, 200);
+  }
+
+  function makeCard(idx) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.id = idx;
+
+    var inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    var back = document.createElement('div');
+    back.className = 'card-face card-back';
+    back.textContent = '?';
+
+    var front = document.createElement('div');
+    front.className = 'card-face card-front';
+
+    var img = document.createElement('div');
+    img.className = 'card-img';
+
+    var label = document.createElement('div');
+    label.className = 'card-label';
+    label.textContent = LABELS[idx] || ('ALI ' + (idx + 1));
+
+    front.appendChild(img);
+    front.appendChild(label);
+    inner.appendChild(back);
+    inner.appendChild(front);
+    card.appendChild(inner);
+
+    card.addEventListener('click', function(){ flip(card); });
+    return card;
+  }
+
+  function build() {
+    var sel = parseInt(diffSel.value, 10);
+    pairs = sel === 8 ? 10 : 8;
+    var cols = 4;
+    board.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+
+    var deck = [];
+    for (var i=0;i<pairs;i++) { deck.push(i); deck.push(i); }
+    for (var j=deck.length-1;j>0;j--){
+      var k = Math.floor(Math.random()*(j+1));
+      var t = deck[j]; deck[j]=deck[k]; deck[k]=t;
+    }
+
+    while (board.firstChild) board.removeChild(board.firstChild);
+    deck.forEach(function(idx){ board.appendChild(makeCard(idx)); });
+
+    flipped=[]; matched=0; moves=0; locked=false;
+    winEl.style.display='none';
+    updateHUD();
+    timeEl.textContent = '0s';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval=null; }
+    startTime = 0;
+  }
+
+  function flip(card) {
+    if (locked) return;
+    if (card.classList.contains('flipped')) return;
+    if (card.classList.contains('matched')) return;
+
+    if (!startTime) startTimer();
+
+    card.classList.add('flipped');
+    flipped.push(card);
+
+    if (flipped.length === 2) {
+      moves++;
+      updateHUD();
+      var a = flipped[0], b = flipped[1];
+      if (a.dataset.id === b.dataset.id) {
+        setTimeout(function(){
+          a.classList.add('matched');
+          b.classList.add('matched');
+          matched++;
+          updateHUD();
+          flipped = [];
+          if (matched === pairs) {
+            clearInterval(timerInterval);
+            var s = Math.floor((Date.now()-startTime)/1000);
+            winEl.textContent = '✨ ALL MATCHED! ' + moves + ' moves in ' + s + 's';
+            winEl.style.display = 'block';
+          }
+        }, 350);
+      } else {
+        locked = true;
+        setTimeout(function(){
+          a.classList.remove('flipped');
+          b.classList.remove('flipped');
+          flipped = [];
+          locked = false;
+        }, 800);
+      }
+    }
+  }
+
+  resetBtn.addEventListener('click', build);
+  diffSel.addEventListener('change', build);
+
+  build();
+})();
+</script>
+</body>
+</html>
